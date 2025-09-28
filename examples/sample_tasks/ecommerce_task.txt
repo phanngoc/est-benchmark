@@ -1,0 +1,57 @@
+Phát triển một ứng dụng web e-commerce hoàn chỉnh với các tính năng sau:
+
+## Frontend Requirements
+- Responsive design cho desktop và mobile
+- Trang chủ với banner, sản phẩm nổi bật, categories
+- Trang danh sách sản phẩm với search, filter, pagination
+- Trang chi tiết sản phẩm với hình ảnh, mô tả, reviews
+- Giỏ hàng với tính năng thêm/xóa/cập nhật số lượng
+- Checkout flow với thông tin giao hàng và thanh toán
+- Trang profile người dùng với lịch sử đơn hàng
+- Authentication (đăng ký, đăng nhập, quên mật khẩu)
+
+## Backend Requirements
+- RESTful API cho tất cả các chức năng
+- Authentication và authorization với JWT
+- Quản lý sản phẩm (CRUD) với categories và inventory
+- Quản lý người dùng và profiles
+- Xử lý đơn hàng và order management
+- Integration với payment gateway (Stripe/PayPal)
+- Email notifications cho đơn hàng
+- Admin dashboard để quản lý hệ thống
+
+## Database Requirements
+- Thiết kế database schema cho users, products, orders, categories
+- Indexing cho performance
+- Data migration và seeding
+- Backup và recovery procedures
+
+## DevOps Requirements
+- CI/CD pipeline
+- Docker containerization
+- Deployment trên cloud (AWS/GCP)
+- Monitoring và logging
+- SSL certificates và security
+
+## Testing Requirements
+- Unit tests cho backend APIs
+- Integration tests
+- Frontend component testing
+- End-to-end testing
+- Performance testing
+
+## Documentation
+- API documentation
+- User manual
+- Developer documentation
+- Deployment guide
+
+## Additional Features
+- Multi-language support (English, Vietnamese)
+- SEO optimization
+- Analytics integration (Google Analytics)
+- Social media login
+- Wishlist functionality
+- Product recommendations
+- Inventory alerts
+- Coupon và discount system
