@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import json
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -9,6 +10,7 @@ from config import Config
 from utils.file_processor import FileProcessor
 from utils.graphrag_handler import GraphRAGHandler
 from utils.visualization import GraphVisualization
+from enhanced_estimation_workflow import EnhancedEstimationWorkflow
 
 # Page configuration
 st.set_page_config(
@@ -27,6 +29,122 @@ if 'query_history' not in st.session_state:
     st.session_state.query_history = []
 if 'is_processing' not in st.session_state:
     st.session_state.is_processing = False
+if 'estimation_workflow' not in st.session_state:
+    st.session_state.estimation_workflow = EnhancedEstimationWorkflow()
+if 'project_estimation_result' not in st.session_state:
+    st.session_state.project_estimation_result = None
+if 'estimation_in_progress' not in st.session_state:
+    st.session_state.estimation_in_progress = False
+
+def auto_analyze_project_scope(graphrag_handler) -> str:
+    """
+    Auto-generate comprehensive project description từ uploaded documents
+    """
+    if not graphrag_handler or not graphrag_handler.is_initialized:
+        return ""
+
+    # Multiple queries to understand project scope comprehensively
+    project_queries = [
+        "What is the main project or system described in these documents? Provide a detailed summary.",
+        "What are the key features and functionalities that need to be implemented?",
+        "What are the technical requirements and components mentioned?",
+        "What are the functional and non-functional requirements?",
+        "What technologies, frameworks, or platforms are specified?",
+        "What are the main modules or subsystems that need to be built?"
+    ]
+
+    project_insights = []
+    for query in project_queries:
+        try:
+            result = graphrag_handler.query(query, with_references=False)
+            if result and result.get('response'):
+                project_insights.append(result['response'])
+        except Exception as e:
+            st.warning(f"Could not analyze: {query[:50]}... - {str(e)}")
+            continue
+
+    if not project_insights:
+        return ""
+
+    # Combine insights into comprehensive project description
+    combined_description = f"""
+Phát triển dự án với các yêu cầu sau được trích xuất từ tài liệu:
+
+{chr(10).join([f"- {insight}" for insight in project_insights])}
+
+Dự án cần được chia nhỏ thành các tasks cụ thể với estimation effort phù hợp cho middle developer (3 năm kinh nghiệm).
+"""
+
+    return combined_description.strip()
+
+def run_project_estimation():
+    """
+    Main function để chạy project estimation với Streamlit integration
+    """
+    if st.session_state.estimation_in_progress:
+        st.warning("🔄 Estimation đang chạy. Vui lòng đợi...")
+        return
+
+    if not st.session_state.graphrag_handler.is_initialized:
+        st.error("❌ GraphRAG chưa được khởi tạo. Vui lòng khởi tạo GraphRAG trước.")
+        return
+
+    if not st.session_state.processed_files:
+        st.error("❌ Chưa có tài liệu nào được xử lý. Vui lòng upload và xử lý tài liệu trước.")
+        return
+
+    try:
+        st.session_state.estimation_in_progress = True
+
+        # Step 1: Auto analyze project scope
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        status_text.text("🔍 Đang phân tích tài liệu để hiểu project scope...")
+        progress_bar.progress(10)
+
+        project_description = auto_analyze_project_scope(st.session_state.graphrag_handler)
+
+        if not project_description:
+            st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
+            return
+
+        # Step 2: Run estimation workflow
+        status_text.text("🚀 Đang chạy estimation workflow...")
+        progress_bar.progress(30)
+
+        result = st.session_state.estimation_workflow.run_estimation(
+            project_description,
+            graphrag_handler=st.session_state.graphrag_handler
+        )
+
+        if result and result.get('workflow_status') == 'completed':
+            status_text.text("✅ Estimation hoàn thành!")
+            progress_bar.progress(100)
+
+            st.session_state.project_estimation_result = result
+            st.success("🎉 Project estimation đã hoàn thành thành công!")
+
+            # Display summary
+            total_effort = result.get('total_effort', 0)
+            total_confidence = result.get('total_confidence', 0)
+            task_count = len(result.get('final_estimation_data', []))
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Effort", f"{total_effort:.1f} mandays")
+            with col2:
+                st.metric("Total Tasks", task_count)
+            with col3:
+                st.metric("Avg Confidence", f"{total_confidence:.0%}")
+
+        else:
+            st.error("❌ Estimation workflow failed. Vui lòng thử lại.")
+
+    except Exception as e:
+        st.error(f"❌ Lỗi khi chạy estimation: {str(e)}")
+    finally:
+        st.session_state.estimation_in_progress = False
 
 def main():
     """Main application function"""
@@ -93,7 +211,7 @@ def main():
                     st.error("❌ Lỗi khi khởi tạo GraphRAG")
     
     # Main content area
-    tab1, tab2, tab3, tab4 = st.tabs(["📁 Upload Files", "🔍 Query", "📊 Visualization", "ℹ️ Info"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
@@ -224,8 +342,132 @@ def main():
                 if st.button("🗑️ Xóa lịch sử"):
                     st.session_state.query_history = []
                     st.rerun()
-    
+
     with tab3:
+        st.header("📋 Project Estimation")
+
+        # Prerequisites check section
+        st.subheader("🔍 Prerequisites Check")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            graphrag_status = "✅ Initialized" if st.session_state.graphrag_handler.is_initialized else "❌ Not Initialized"
+            st.metric("GraphRAG Status", graphrag_status)
+
+        with col2:
+            files_count = len(st.session_state.processed_files)
+            files_status = f"✅ {files_count} files" if files_count > 0 else "❌ No files"
+            st.metric("Documents", files_status)
+
+        with col3:
+            ready_status = "✅ Ready" if (st.session_state.graphrag_handler.is_initialized and files_count > 0) else "❌ Not Ready"
+            st.metric("Estimation Ready", ready_status)
+
+        st.divider()
+
+        # Main estimation section
+        if not st.session_state.graphrag_handler.is_initialized:
+            st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi thực hiện estimation.")
+            st.info("💡 Đi đến tab 'Upload Files' để khởi tạo GraphRAG và upload tài liệu.")
+        elif not st.session_state.processed_files:
+            st.warning("⚠️ Vui lòng upload và xử lý tài liệu trước khi thực hiện estimation.")
+            st.info("💡 Đi đến tab 'Upload Files' để upload tài liệu dự án.")
+        else:
+            # One-click estimation button
+            st.subheader("🚀 Auto Project Analysis & Estimation")
+            st.markdown("""
+            **Chức năng này sẽ:**
+            - 🔍 Tự động phân tích toàn bộ tài liệu đã upload
+            - 🧠 Sử dụng GraphRAG để hiểu project scope và requirements
+            - 📋 Chia nhỏ project thành các tasks cụ thể
+            - ⏱️ Estimate effort cho từng task (target: middle developer 3 năm kinh nghiệm)
+            - 📊 Tạo báo cáo estimation hoàn chỉnh với Excel export
+            """)
+
+            # Big estimation button
+            if st.button("🚀 Analyze & Estimate Project", type="primary", disabled=st.session_state.estimation_in_progress):
+                run_project_estimation()
+
+            # Results section
+            if st.session_state.project_estimation_result:
+                st.divider()
+                st.subheader("📊 Estimation Results")
+
+                result = st.session_state.project_estimation_result
+
+                # Summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                total_effort = result.get('total_effort', 0)
+                total_confidence = result.get('total_confidence', 0)
+                task_count = len(result.get('final_estimation_data', []))
+                tasks_adjusted = result.get('tasks_adjusted', 0)
+
+                with col1:
+                    st.metric("Total Effort", f"{total_effort:.1f} mandays")
+                with col2:
+                    st.metric("Total Tasks", task_count)
+                with col3:
+                    st.metric("Avg Confidence", f"{total_confidence:.0%}")
+                with col4:
+                    st.metric("Tasks Adjusted", tasks_adjusted)
+
+                # Detailed results table
+                st.subheader("📋 Detailed Task Breakdown")
+                estimation_data = result.get('final_estimation_data', [])
+
+                if estimation_data:
+                    # Convert to DataFrame for better display
+                    df = pd.DataFrame(estimation_data)
+
+                    # Select and rename columns for display
+                    display_columns = ['id', 'category', 'parent_task', 'sub_task', 'description', 'estimation_manday', 'confidence_level']
+                    if all(col in df.columns for col in display_columns):
+                        display_df = df[display_columns].copy()
+                        display_df.columns = ['ID', 'Category', 'Parent Task', 'Sub Task', 'Description', 'Effort (mandays)', 'Confidence']
+                        display_df['Effort (mandays)'] = display_df['Effort (mandays)'].round(1)
+                        display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
+
+                        st.dataframe(display_df, use_container_width=True, height=400)
+                    else:
+                        st.dataframe(df, use_container_width=True, height=400)
+
+                # Export and visualization section
+                st.subheader("📁 Export & Visualization")
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("📥 Export to Excel", type="secondary"):
+                        try:
+                            excel_file = st.session_state.estimation_workflow.export_results(result)
+                            if excel_file and os.path.exists(excel_file):
+                                with open(excel_file, 'rb') as f:
+                                    st.download_button(
+                                        label="⬇️ Download Excel File",
+                                        data=f.read(),
+                                        file_name=os.path.basename(excel_file),
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                st.success(f"✅ Excel file ready: {os.path.basename(excel_file)}")
+                            else:
+                                st.error("❌ Failed to create Excel file")
+                        except Exception as e:
+                            st.error(f"❌ Export error: {str(e)}")
+
+                with col2:
+                    if st.button("🎨 Show Mermaid Diagram", type="secondary"):
+                        mermaid_diagram = st.session_state.estimation_workflow.get_mermaid_diagram(result)
+                        if mermaid_diagram:
+                            st.subheader("🔄 Project Workflow Diagram")
+                            st.code(mermaid_diagram, language="mermaid")
+                        else:
+                            st.warning("⚠️ No diagram available")
+
+                with col3:
+                    if st.button("🗑️ Clear Results", type="secondary"):
+                        st.session_state.project_estimation_result = None
+                        st.rerun()
+
+    with tab4:
         st.header("📊 Visualization")
         
         if not st.session_state.graphrag_handler.is_initialized:
@@ -259,7 +501,7 @@ def main():
             else:
                 st.info("ℹ️ Chưa có dữ liệu để hiển thị")
     
-    with tab4:
+    with tab5:
         st.header("ℹ️ Thông tin Ứng dụng")
         
         st.markdown("""
