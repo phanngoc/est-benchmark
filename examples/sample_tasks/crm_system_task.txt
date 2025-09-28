@@ -1,0 +1,80 @@
+Phát triển hệ thống CRM (Customer Relationship Management) cho doanh nghiệp vừa và nhỏ với các module:
+
+## Customer Management
+- Customer database với thông tin chi tiết
+- Customer segmentation và tagging
+- Contact history tracking
+- Customer lifecycle management
+- Import/export customer data
+- Duplicate detection và merge
+
+## Lead Management
+- Lead capture từ multiple sources
+- Lead scoring và qualification
+- Lead assignment và routing
+- Lead nurturing workflows
+- Conversion tracking
+- Lead source analytics
+
+## Sales Pipeline
+- Opportunity management
+- Sales stage tracking
+- Deal forecasting
+- Quote và proposal generation
+- Sales performance metrics
+- Territory management
+
+## Communication Tools
+- Email integration (Gmail, Outlook)
+- Email templates và automation
+- SMS integration
+- Call logging và recording
+- Meeting scheduler
+- Communication history
+
+## Reporting & Analytics
+- Sales dashboards
+- Performance reports
+- Revenue analytics
+- Customer analytics
+- Custom report builder
+- Data export capabilities
+
+## Task & Activity Management
+- Task creation và assignment
+- Activity tracking
+- Calendar integration
+- Reminder system
+- Workflow automation
+- Team collaboration tools
+
+## Integration Requirements
+- Email service integration
+- Calendar integration (Google, Outlook)
+- Phone system integration
+- Marketing automation tools
+- Accounting software integration
+- Social media integration
+
+## User Management
+- Role-based access control
+- User permissions
+- Team management
+- Activity logging
+- Security settings
+
+## Technical Requirements
+- Web-based application
+- Mobile responsive design
+- API development
+- Database optimization
+- Security implementation
+- Backup và recovery
+
+## Advanced Features
+- AI-powered insights
+- Predictive analytics
+- Chatbot integration
+- Document management
+- E-signature integration
+- Multi-language support
