@@ -109,13 +109,37 @@ def run_project_estimation():
             st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
             return
 
-        # Step 2: Run estimation workflow
+        # Step 2: Pre-fetch GraphRAG insights to avoid serialization issues
+        status_text.text("🔍 Đang pre-fetch GraphRAG insights...")
+        progress_bar.progress(20)
+
+        # Pre-fetch additional insights for estimation
+        estimation_queries = [
+            "What are the main technical challenges mentioned in the project?",
+            "What are the integration points and dependencies described?",
+            "What are the performance and scalability requirements?",
+            "What are the security and compliance requirements mentioned?"
+        ]
+
+        graphrag_insights = []
+        for query in estimation_queries:
+            try:
+                result_insight = st.session_state.graphrag_handler.query(query, with_references=False)
+                if result_insight and result_insight.get('response'):
+                    graphrag_insights.append({
+                        'query': query,
+                        'response': result_insight['response']
+                    })
+            except Exception as e:
+                st.warning(f"Could not fetch insight for: {query[:50]}...")
+
+        # Step 3: Run estimation workflow
         status_text.text("🚀 Đang chạy estimation workflow...")
-        progress_bar.progress(30)
+        progress_bar.progress(50)
 
         result = st.session_state.estimation_workflow.run_estimation(
             project_description,
-            graphrag_handler=st.session_state.graphrag_handler
+            graphrag_insights=graphrag_insights
         )
 
         if result and result.get('workflow_status') == 'completed':

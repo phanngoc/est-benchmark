@@ -80,7 +80,6 @@ class GraphRAGInsight:
 class EnhancedOrchestratorState(TypedDict):
     """Enhanced state cho Orchestrator với GraphRAG integration"""
     original_task: str  # Task gốc từ user
-    graphrag_handler: Any  # GraphRAG handler instance từ Streamlit
     graphrag_insights: List[Dict[str, Any]]  # Insights từ GraphRAG queries
 
     # Category planning
@@ -263,34 +262,12 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
 
     llm_handler = EnhancedEstimationLLM()
 
-    # Sử dụng GraphRAG để có context về task
-    graphrag_insights = []
-    graphrag_handler = state.get('graphrag_handler')
-
-    if graphrag_handler and graphrag_handler.is_initialized:
-        print("📊 Đang query GraphRAG để có context...")
-
-        # Các queries để hiểu task better
-        analysis_queries = [
-            f"Phân tích task sau và xác định các component chính: {state['original_task']}",
-            f"Task này liên quan đến những technologies và frameworks nào? {state['original_task']}",
-            f"Những challenges và risks chính khi implement: {state['original_task']}",
-            f"Dependencies và prerequisites cho task: {state['original_task']}"
-        ]
-
-        for query in analysis_queries:
-            try:
-                result = graphrag_handler.query(query, with_references=True)
-                if result:
-                    graphrag_insights.append({
-                        'query': query,
-                        'response': result['response'],
-                        'references': result.get('references', []),
-                        'timestamp': result['timestamp']
-                    })
-                    print(f"✅ GraphRAG insight: {query[:50]}...")
-            except Exception as e:
-                print(f"⚠️ Lỗi khi query GraphRAG: {e}")
+    # Sử dụng pre-fetched GraphRAG insights từ state
+    graphrag_insights = state.get('graphrag_insights', [])
+    if graphrag_insights:
+        print(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
+    else:
+        print("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
 
     # Tạo context từ GraphRAG insights
     graphrag_context = ""
@@ -354,22 +331,14 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
     # Extract data from worker input
     category_focus = worker_input.get('category_focus', 'General')
     original_task = worker_input.get('original_task', '')
-    graphrag_handler = worker_input.get('graphrag_handler')
 
     print(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
 
     llm_handler = EnhancedEstimationLLM()
 
-    # Sử dụng GraphRAG để có thêm context về category cụ thể
-    category_context = ""
-    if graphrag_handler and graphrag_handler.is_initialized:
-        try:
-            context_query = f"Chi tiết về implementation {category_focus} cho task: {original_task}"
-            result = graphrag_handler.query(context_query, with_references=True)
-            if result:
-                category_context = f"\nContext từ GraphRAG về {category_focus}:\n{result['response']}\n"
-        except Exception as e:
-            print(f"⚠️ Không thể get context từ GraphRAG: {e}")
+    # Note: GraphRAG insights are already available in the orchestrator state
+    # and used for overall project understanding. No additional GraphRAG calls needed here.
+    category_context = f"\nCategory focus: {category_focus}\n"
 
     messages = [
         SystemMessage(content=llm_handler.get_breakdown_worker_prompt()),
@@ -581,8 +550,7 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
             "task_breakdown_worker",
             {
                 "category_focus": category,
-                "original_task": state['original_task'],
-                "graphrag_handler": state.get('graphrag_handler')
+                "original_task": state['original_task']
             }
         )
         sends.append(send)
@@ -979,7 +947,7 @@ class EnhancedEstimationWorkflow:
 
         print("✅ Enhanced Estimation Workflow đã được build thành công!")
 
-    def run_estimation(self, task_description: str, graphrag_handler=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
+    def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
         """
         Chạy enhanced estimation workflow
         """
@@ -987,8 +955,7 @@ class EnhancedEstimationWorkflow:
 
         initial_state = {
             "original_task": task_description,
-            "graphrag_handler": graphrag_handler,
-            "graphrag_insights": [],
+            "graphrag_insights": graphrag_insights or [],
             "main_categories": [],
             "breakdown_results": [],
             "estimation_results": [],
@@ -1090,7 +1057,7 @@ if __name__ == "__main__":
     """
 
     # Chạy estimation (without GraphRAG for this example)
-    result = enhanced_workflow.run_estimation(sample_task, graphrag_handler=None)
+    result = enhanced_workflow.run_estimation(sample_task, graphrag_insights=None)
 
     # Xuất kết quả
     if result.get('workflow_status') == 'completed':
