@@ -1,0 +1,24 @@
+Lịch sử phát triển của Internet
+
+Internet đã trải qua một quá trình phát triển dài và phức tạp, bắt đầu từ những năm 1960 với dự án ARPANET của Bộ Quốc phòng Mỹ.
+
+Những mốc quan trọng:
+- 1969: ARPANET được tạo ra, kết nối 4 trường đại học
+- 1970s: TCP/IP protocol được phát triển
+- 1980s: NSFNET được tạo ra, mở rộng mạng lưới
+- 1990s: World Wide Web ra đời, Internet trở nên phổ biến
+- 2000s: Web 2.0, mạng xã hội phát triển
+- 2010s: Mobile internet, cloud computing
+- 2020s: 5G, IoT, AI integration
+
+Tim Berners-Lee được coi là cha đẻ của World Wide Web khi phát minh ra HTML, HTTP và URL vào năm 1989. Ông làm việc tại CERN (Tổ chức Nghiên cứu Hạt nhân châu Âu) ở Geneva, Thụy Sĩ.
+
+Các công nghệ nền tảng của Internet:
+- TCP/IP: Giao thức truyền dữ liệu
+- HTTP/HTTPS: Giao thức web
+- DNS: Hệ thống tên miền
+- HTML: Ngôn ngữ đánh dấu siêu văn bản
+- CSS: Ngôn ngữ định dạng
+- JavaScript: Ngôn ngữ lập trình web
+
+Internet đã thay đổi hoàn toàn cách chúng ta giao tiếp, học tập, làm việc và giải trí. Ngày nay, hơn 4 tỷ người trên thế giới sử dụng Internet.

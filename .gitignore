@@ -1,0 +1,41 @@
+# Thư mục/thư viện Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.pyo
+
+# Môi trường ảo
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+.venv.bak/
+
+# File cấu hình/mật khẩu
+.env
+.env.*
+*.env
+
+# VSCode
+.vscode/
+
+# Jupyter notebook checkpoint
+.ipynb_checkpoints
+
+# Thư mục workspace của app
+graphrag_workspace/
+
+# Log files
+*.log
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db

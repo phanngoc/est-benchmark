@@ -1,0 +1,31 @@
+Khoa học Dữ liệu và Big Data
+
+Khoa học dữ liệu là một lĩnh vực liên ngành kết hợp toán học, thống kê, lập trình và kiến thức chuyên môn để trích xuất thông tin có ý nghĩa từ dữ liệu.
+
+Các thành phần chính:
+1. Thu thập dữ liệu: Từ nhiều nguồn khác nhau như cơ sở dữ liệu, API, web scraping
+2. Làm sạch dữ liệu: Xử lý dữ liệu thiếu, lỗi, không nhất quán
+3. Phân tích thống kê: Sử dụng các phương pháp thống kê để hiểu dữ liệu
+4. Machine Learning: Xây dựng mô hình dự đoán và phân loại
+5. Visualization: Trình bày kết quả một cách trực quan
+
+Big Data đặc trưng bởi 3V:
+- Volume: Khối lượng dữ liệu khổng lồ
+- Velocity: Tốc độ xử lý dữ liệu nhanh
+- Variety: Đa dạng loại dữ liệu (văn bản, hình ảnh, âm thanh)
+
+Các công cụ phổ biến:
+- Python: Pandas, NumPy, Scikit-learn, Matplotlib
+- R: Dplyr, ggplot2, caret
+- SQL: MySQL, PostgreSQL, MongoDB
+- Cloud: AWS, Google Cloud, Azure
+- Big Data: Hadoop, Spark, Kafka
+
+Ứng dụng thực tế:
+- E-commerce: Recommendation systems
+- Healthcare: Medical diagnosis
+- Finance: Fraud detection
+- Marketing: Customer segmentation
+- Transportation: Route optimization
+
+Khoa học dữ liệu đang trở thành một kỹ năng quan trọng trong thời đại số, với nhu cầu nhân lực cao và mức lương hấp dẫn.
