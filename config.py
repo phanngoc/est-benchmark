@@ -14,22 +14,22 @@ class Config:
     
     # App Configuration
     APP_TITLE = "Fast GraphRAG Document Analyzer"
-    APP_DESCRIPTION = "Phân tích và truy vấn tài liệu với Fast GraphRAG"
+    APP_DESCRIPTION = "Analyze and query documents with Fast GraphRAG"
     
     # File Upload Configuration
     MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
     ALLOWED_EXTENSIONS = ['.txt', '.pdf', '.docx', '.md']
     
     # GraphRAG Configuration
-    DEFAULT_DOMAIN = "Tập trung vào phân tích tài liệu kỹ thuật và break task thành category, parent task, sub task với estimation."
+    DEFAULT_DOMAIN = "Focus on analyzing technical documents and breaking tasks into categories, parent tasks, sub tasks with estimation."
     DEFAULT_ENTITY_TYPES = ["Category", "ParentTask", "SubTask", "Feature", "Component", "API", "Database", "Requirement", "Dependency", "Estimation"]
     DEFAULT_EXAMPLE_QUERIES = [
-        "Tài liệu này có những category phát triển nào?",
-        "Các parent tasks chính cần thực hiện là gì?",
-        "Sub tasks cụ thể cho từng parent task là gì?",
-        "Ước tính effort cho các tasks này như thế nào?",
-        "Dependencies giữa các tasks là gì?",
-        "Priority của các tasks được xác định ra sao?"
+        "What development categories does this document contain?",
+        "What are the main parent tasks that need to be implemented?",
+        "What are the specific subtasks for each parent task?",
+        "How are the effort estimates for these tasks calculated?",
+        "What are the dependencies between tasks?",
+        "How is the priority of tasks determined?"
     ]
 
     # Working Directory

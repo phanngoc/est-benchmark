@@ -2,12 +2,12 @@
 Enhanced Estimation Workflow using LangGraph Orchestrator-Worker Pattern
 =======================================================================
 
-Kiến trúc mới với 3 workers chuyên biệt:
-1. Worker 1: Task Breakdown với GraphRAG integration
-2. Worker 2: Estimation Worker cho effort calculation
-3. Worker 3: Effort Calculator & Validator với validation logic
+New architecture with 3 specialized workers:
+1. Worker 1: Task Breakdown with GraphRAG integration
+2. Worker 2: Estimation Worker for effort calculation
+3. Worker 3: Effort Calculator & Validator with validation logic
 
-Tích hợp với GraphRAG handler từ app.py để phân tích thông minh hơn.
+Integrated with GraphRAG handler from app.py for smarter analysis.
 
 Author: AI Assistant
 Date: 2025-09-28
@@ -34,7 +34,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 @dataclass
 class TaskBreakdown:
-    """Enhanced model cho việc break task với validation"""
+    """Enhanced model for task breakdown with validation"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     category: str = ""
     parent_task: str = ""
@@ -66,7 +66,7 @@ class TaskBreakdown:
 
 @dataclass
 class GraphRAGInsight:
-    """Model để lưu insights từ GraphRAG"""
+    """Model to store insights from GraphRAG"""
     query: str
     response: str
     references: List[str]
@@ -78,32 +78,32 @@ class GraphRAGInsight:
 # ========================
 
 class EnhancedOrchestratorState(TypedDict):
-    """Enhanced state cho Orchestrator với GraphRAG integration"""
-    original_task: str  # Task gốc từ user
-    graphrag_insights: List[Dict[str, Any]]  # Insights từ GraphRAG queries
+    """Enhanced state for Orchestrator with GraphRAG integration"""
+    original_task: str  # Original task from user
+    graphrag_insights: List[Dict[str, Any]]  # Insights from GraphRAG queries
 
     # Category planning
-    main_categories: List[str]  # Các category chính
+    main_categories: List[str]  # Main categories
 
-    # Worker results với consistent annotations
-    breakdown_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 1
-    estimation_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 2
-    validated_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 3
+    # Worker results with consistent annotations
+    breakdown_results: Annotated[List[Dict[str, Any]], operator.add]  # Results from Worker 1
+    estimation_results: Annotated[List[Dict[str, Any]], operator.add]  # Results from Worker 2
+    validated_results: Annotated[List[Dict[str, Any]], operator.add]  # Results from Worker 3
 
     # Final outputs
     final_estimation_data: List[Dict[str, Any]]  # Final serializable data
-    total_effort: float  # Tổng effort (manday)
-    total_confidence: float  # Confidence score trung bình
-    mermaid_diagram: str  # Mermaid code cho visualization
-    validation_summary: Dict[str, Any]  # Summary của validation process
-    workflow_status: str  # Trạng thái workflow
+    total_effort: float  # Total effort (manday)
+    total_confidence: float  # Average confidence score
+    mermaid_diagram: str  # Mermaid code for visualization
+    validation_summary: Dict[str, Any]  # Summary of validation process
+    workflow_status: str  # Workflow status
 
 # ========================
 # Enhanced LLM Configuration
 # ========================
 
 class EnhancedEstimationLLM:
-    """Enhanced LLM wrapper với prompts chuyên biệt cho từng worker"""
+    """Enhanced LLM wrapper with specialized prompts for each worker"""
 
     def __init__(self, model_name: str = "gpt-4o-mini"):
         self.llm = ChatOpenAI(
@@ -114,42 +114,42 @@ class EnhancedEstimationLLM:
 
     def get_orchestrator_prompt(self) -> str:
         return """
-        Bạn là một Senior Project Manager với 15 năm kinh nghiệm trong việc phân tích và breakdown các dự án phần mềm phức tạp.
+        You are a Senior Project Manager with 15 years of experience in analyzing and breaking down complex software projects.
 
-        Nhiệm vụ của bạn:
-        1. Phân tích task được cung cấp với context từ GraphRAG
-        2. Xác định các category chính cần cho dự án
-        3. Tạo chiến lược để breakdown task một cách toàn diện
-        4. Chuẩn bị input cho các workers chuyên biệt
+        Your tasks:
+        1. Analyze the provided task with context from GraphRAG
+        2. Identify the main categories needed for the project
+        3. Create a strategy to break down the task comprehensively
+        4. Prepare input for specialized workers
 
-        Bạn sẽ có thông tin từ GraphRAG để hiểu rõ hơn về context và requirements.
+        You will have information from GraphRAG to better understand the context and requirements.
 
-        Trả về kết quả dưới dạng JSON với format:
+        Return results in JSON format:
         {
             "categories": ["Frontend", "Backend", "Database", "DevOps", "Testing", "Documentation"],
-            "analysis_strategy": "Chiến lược phân tích tổng thể",
+            "analysis_strategy": "Overall analysis strategy",
             "complexity_assessment": "Low/Medium/High",
-            "estimated_timeline": "Ước tính thời gian tổng thể"
+            "estimated_timeline": "Overall time estimate"
         }
         """
 
     def get_breakdown_worker_prompt(self) -> str:
         return """
-        Bạn là một Technical Lead chuyên gia trong việc break down technical requirements thành các task cụ thể.
+        You are a Technical Lead expert in breaking down technical requirements into specific tasks.
 
-        Nhiệm vụ của bạn:
-        1. Sử dụng thông tin từ GraphRAG để hiểu sâu về requirements
-        2. Break down category được giao thành parent tasks và sub tasks
-        3. Tạo description chi tiết cho mỗi task
-        4. Xác định dependencies và priority
+        Your tasks:
+        1. Use information from GraphRAG to deeply understand requirements
+        2. Break down the assigned category into parent tasks and sub tasks
+        3. Create detailed descriptions for each task
+        4. Identify dependencies and priority
 
-        Nguyên tắc breakdown:
-        - Mỗi sub-task phải có scope rõ ràng và có thể estimate được
-        - Task size lý tưởng: 0.5-3 mandays cho middle developer
-        - Xem xét dependencies giữa các task
-        - Ưu tiên các task critical path
+        Breakdown principles:
+        - Each sub-task must have clear scope and be estimatable
+        - Ideal task size: 0.5-3 mandays for middle developer
+        - Consider dependencies between tasks
+        - Prioritize critical path tasks
 
-        Trả về kết quả dưới dạng JSON với format:
+        Return results in JSON format:
         {
             "breakdown": [
                 {
@@ -169,15 +169,15 @@ class EnhancedEstimationLLM:
 
     def get_estimation_worker_prompt(self) -> str:
         return """
-        Bạn là một Senior Developer với 8 năm kinh nghiệm, chuyên gia trong việc estimation effort cho các dự án phần mềm.
+        You are a Senior Developer with 8 years of experience, expert in effort estimation for software projects.
 
-        Nhiệm vụ của bạn:
-        1. Phân tích từng sub-task được cung cấp
-        2. Estimate effort dựa trên middle developer (3 năm kinh nghiệm)
-        3. Tính toán effort với unit là manday (7 giờ/ngày)
-        4. Đánh giá confidence level của estimation
+        Your tasks:
+        1. Analyze each provided sub-task
+        2. Estimate effort based on middle developer (3 years experience)
+        3. Calculate effort with unit as manday (7 hours/day)
+        4. Assess confidence level of estimation
 
-        Tiêu chuẩn estimation cho middle developer (3 năm kinh nghiệm):
+        Estimation standards for middle developer (3 years experience):
         - Simple CRUD operations: 0.5-1 manday
         - Complex business logic: 1-3 manday
         - API integration (simple): 0.5-1.5 manday
@@ -186,16 +186,16 @@ class EnhancedEstimationLLM:
         - UI components (complex/responsive): 1-2.5 manday
         - Database design/migration: 0.5-2 manday
         - Authentication/Authorization: 1-2 manday
-        - Unit testing: 20-30% của development effort
-        - Integration testing: 10-20% của development effort
-        - Documentation: 10-15% của development effort
+        - Unit testing: 20-30% of development effort
+        - Integration testing: 10-20% of development effort
+        - Documentation: 10-15% of development effort
 
-        Factors ảnh hưởng đến estimation:
+        Factors affecting estimation:
         - Complexity: Low (-20%), Medium (baseline), High (+50%)
-        - Dependencies: Nhiều dependencies (+20-30%)
+        - Dependencies: Many dependencies (+20-30%)
         - Risk level: High risk (+30-50%)
 
-        Trả về kết quả dưới dạng JSON với format:
+        Return results in JSON format:
         {
             "estimation": {
                 "id": "task_id",
@@ -214,29 +214,29 @@ class EnhancedEstimationLLM:
 
     def get_validation_worker_prompt(self) -> str:
         return """
-        Bạn là một Project Manager với chuyên môn sâu về quality assurance và risk management.
+        You are a Project Manager with deep expertise in quality assurance and risk management.
 
-        Nhiệm vụ của bạn:
-        1. Validate các estimations từ Estimation Worker
-        2. Cross-check logic và consistency
-        3. Áp dụng buffer cho risk mitigation
-        4. Đảm bảo total effort hợp lý
+        Your tasks:
+        1. Validate estimations from Estimation Worker
+        2. Cross-check logic and consistency
+        3. Apply buffer for risk mitigation
+        4. Ensure total effort is reasonable
 
         Validation criteria:
-        - Consistency check: So sánh với các task tương tự
-        - Dependency validation: Đảm bảo dependencies được tính đúng
-        - Risk assessment: Đánh giá và apply buffer cho high-risk tasks
-        - Team capacity: Xem xét realistic capacity của team
-        - Buffer calculation: 10-20% cho các task có risk
+        - Consistency check: Compare with similar tasks
+        - Dependency validation: Ensure dependencies are calculated correctly
+        - Risk assessment: Evaluate and apply buffer for high-risk tasks
+        - Team capacity: Consider realistic team capacity
+        - Buffer calculation: 10-20% for risky tasks
 
         Adjustment rules:
-        - Low complexity, low risk: Không adjust
+        - Low complexity, low risk: No adjustment
         - Medium complexity/risk: +10% buffer
         - High complexity/risk: +20% buffer
         - Critical path tasks: +15% buffer
         - New technology/framework: +25% buffer
 
-        Trả về kết quả dưới dạng JSON với format:
+        Return results in JSON format:
         {
             "validation": {
                 "id": "task_id",
@@ -256,36 +256,36 @@ class EnhancedEstimationLLM:
 
 def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, Any]:
     """
-    Enhanced Orchestrator với GraphRAG integration
+    Enhanced Orchestrator with GraphRAG integration
     """
-    print(f"🎯 Enhanced Orchestrator đang phân tích task: {state['original_task']}")
+    print(f"🎯 Enhanced Orchestrator analyzing task: {state['original_task']}")
 
     llm_handler = EnhancedEstimationLLM()
 
-    # Sử dụng pre-fetched GraphRAG insights từ state
+    # Use pre-fetched GraphRAG insights from state
     graphrag_insights = state.get('graphrag_insights', [])
     if graphrag_insights:
-        print(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
+        print(f"📊 Using {len(graphrag_insights)} available GraphRAG insights...")
     else:
-        print("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
+        print("⚠️ No GraphRAG insights available, using basic analysis")
 
-    # Tạo context từ GraphRAG insights
+    # Create context from GraphRAG insights
     graphrag_context = ""
     if graphrag_insights:
-        graphrag_context = "\n\nContext từ GraphRAG:\n"
+        graphrag_context = "\n\nContext from GraphRAG:\n"
         for insight in graphrag_insights:
             graphrag_context += f"Q: {insight['query']}\nA: {insight['response']}\n---\n"
 
-    # Tạo prompt cho Orchestrator
+    # Create prompt for Orchestrator
     messages = [
         SystemMessage(content=llm_handler.get_orchestrator_prompt()),
         HumanMessage(content=f"""
-        Task cần phân tích và estimation:
+        Task to analyze and estimate:
         {state['original_task']}
 
         {graphrag_context}
 
-        Dựa trên task và context từ GraphRAG, hãy phân tích và đưa ra chiến lược breakdown.
+        Based on the task and context from GraphRAG, please analyze and provide a breakdown strategy.
         """)
     ]
 
@@ -300,7 +300,7 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
 
             categories = result.get('categories', [])
 
-            print(f"✅ Orchestrator đã phân tích: {len(categories)} categories")
+            print(f"✅ Orchestrator analyzed: {len(categories)} categories")
             print(f"📈 Complexity: {result.get('complexity_assessment', 'Unknown')}")
 
             return {
@@ -309,10 +309,10 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
                 'workflow_status': 'orchestrator_completed'
             }
         else:
-            raise ValueError("Không thể parse JSON response từ Orchestrator")
+            raise ValueError("Cannot parse JSON response from Orchestrator")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Enhanced Orchestrator: {e}")
+        print(f"❌ Error in Enhanced Orchestrator: {e}")
         return {
             'main_categories': [],
             'graphrag_insights': graphrag_insights,
@@ -320,19 +320,19 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
         }
 
 # ========================
-# Worker 1: Task Breakdown với GraphRAG
+# Worker 1: Task Breakdown with GraphRAG
 # ========================
 
 def task_breakdown_worker(worker_input) -> Dict[str, Any]:
     """
-    Worker 1: Chuyên break down task với GraphRAG integration
+    Worker 1: Specialized in breaking down tasks with GraphRAG integration
     Receives data via Send() mechanism
     """
     # Extract data from worker input
     category_focus = worker_input.get('category_focus', 'General')
     original_task = worker_input.get('original_task', '')
 
-    print(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
+    print(f"👷‍♂️ Worker 1 (Task Breakdown) processing category: {category_focus}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -348,7 +348,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
 
         {category_context}
 
-        Hãy break down category '{category_focus}' thành các task cụ thể với description chi tiết.
+        Please break down category '{category_focus}' into specific tasks with detailed descriptions.
         """)
     ]
 
@@ -365,18 +365,18 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
             # Add worker source info
             for task in breakdown_tasks:
                 task['worker_source'] = 'task_breakdown_worker'
-                task['confidence_level'] = 0.8  # Default confidence từ breakdown
+                task['confidence_level'] = 0.8  # Default confidence from breakdown
 
-            print(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
+            print(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks for {category_focus}")
 
             return {
                 'breakdown_results': breakdown_tasks
             }
         else:
-            raise ValueError("Không thể parse JSON response từ Breakdown Worker")
+            raise ValueError("Cannot parse JSON response from Breakdown Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Task Breakdown Worker: {e}")
+        print(f"❌ Error in Task Breakdown Worker: {e}")
         return {
             'breakdown_results': []
         }
@@ -387,21 +387,21 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
 
 def estimation_worker(worker_input) -> Dict[str, Any]:
     """
-    Worker 2: Chuyên estimation effort cho các task
+    Worker 2: Specialized in effort estimation for tasks
     Receives task_breakdown via Send() mechanism
     """
     # Extract task data from worker input
     task_breakdown = worker_input.get('task_breakdown', {})
     task_name = task_breakdown.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
+    print(f"👷‍♂️ Worker 2 (Estimation) estimating: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
 
     messages = [
         SystemMessage(content=llm_handler.get_estimation_worker_prompt()),
         HumanMessage(content=f"""
-        Task cần estimation:
+        Task to estimate:
         - Category: {task_breakdown.get('category', '')}
         - Parent Task: {task_breakdown.get('parent_task', '')}
         - Sub Task: {task_breakdown.get('sub_task', '')}
@@ -410,7 +410,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         - Dependencies: {task_breakdown.get('dependencies', [])}
         - Priority: {task_breakdown.get('priority', 'Medium')}
 
-        Hãy estimate effort cho middle developer (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
+        Please estimate effort for middle developer (3 years experience) with unit manday (7 hours/day).
         """)
     ]
 
@@ -424,7 +424,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             result = json.loads(json_match.group())
             estimation_data = result.get('estimation', {})
 
-            # Merge với original task data
+            # Merge with original task data
             estimated_task = task_breakdown.copy()
             estimated_task.update({
                 'estimation_manday': estimation_data.get('estimation_manday', 0),
@@ -441,11 +441,11 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'estimation_results': [estimated_task]
             }
         else:
-            raise ValueError("Không thể parse JSON response từ Estimation Worker")
+            raise ValueError("Cannot parse JSON response from Estimation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Estimation Worker: {e}")
-        # Return task với default estimation
+        print(f"❌ Error in Estimation Worker: {e}")
+        # Return task with default estimation
         fallback_task = task_breakdown.copy() if task_breakdown else {}
         fallback_task.update({
             'estimation_manday': 1.0,  # Default fallback
@@ -462,21 +462,21 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
 def validation_worker(worker_input) -> Dict[str, Any]:
     """
-    Worker 3: Validation và calculation với risk mitigation
+    Worker 3: Validation and calculation with risk mitigation
     Receives estimation_task via Send() mechanism
     """
     # Extract estimation task from worker input
     estimation_task = worker_input.get('estimation_task', {})
     task_name = estimation_task.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
+    print(f"👷‍♂️ Worker 3 (Validation) validating: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
 
     messages = [
         SystemMessage(content=llm_handler.get_validation_worker_prompt()),
         HumanMessage(content=f"""
-        Task cần validation:
+        Task to validate:
         - ID: {estimation_task.get('id', '')}
         - Category: {estimation_task.get('category', '')}
         - Sub Task: {estimation_task.get('sub_task', '')}
@@ -487,7 +487,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
         - Risk Factors: {estimation_task.get('risk_factors', [])}
         - Confidence Level: {estimation_task.get('confidence_level', 0.7)}
 
-        Hãy validate estimation này và apply buffer nếu cần thiết.
+        Please validate this estimation and apply buffer if necessary.
         """)
     ]
 
@@ -519,11 +519,11 @@ def validation_worker(worker_input) -> Dict[str, Any]:
                 'validated_results': [validated_task]
             }
         else:
-            raise ValueError("Không thể parse JSON response từ Validation Worker")
+            raise ValueError("Cannot parse JSON response from Validation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Validation Worker: {e}")
-        # Return task với minimal validation
+        print(f"❌ Error in Validation Worker: {e}")
+        # Return task with minimal validation
         fallback_task = estimation_task.copy() if estimation_task else {}
         fallback_task.update({
             'validation_notes': f'Validation failed, using original estimation: {e}',
@@ -539,10 +539,10 @@ def validation_worker(worker_input) -> Dict[str, Any]:
 
 def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
     """
-    Phân công breakdown workers cho mỗi category
+    Assign breakdown workers for each category
     """
     categories = state.get('main_categories', [])
-    print(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
+    print(f"📋 Assigning breakdown workers for {len(categories)} categories")
 
     sends = []
     for category in categories:
@@ -559,10 +559,10 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
 
 def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     """
-    Phân công estimation workers cho mỗi breakdown task
+    Assign estimation workers for each breakdown task
     """
     breakdown_results = state.get('breakdown_results', [])
-    print(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
+    print(f"📋 Assigning estimation workers for {len(breakdown_results)} tasks")
 
     sends = []
     for task_breakdown in breakdown_results:
@@ -578,10 +578,10 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
 
 def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     """
-    Phân công validation workers cho mỗi estimation task
+    Assign validation workers for each estimation task
     """
     estimation_results = state.get('estimation_results', [])
-    print(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
+    print(f"📋 Assigning validation workers for {len(estimation_results)} tasks")
 
     sends = []
     for estimation_task in estimation_results:
@@ -601,14 +601,14 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
 
 def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any]:
     """
-    Enhanced Synthesizer với advanced features
+    Enhanced Synthesizer with advanced features
     """
-    print("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
+    print("🔄 Enhanced Synthesizer synthesizing results...")
 
     validated_results = state.get('validated_results', [])
 
     if not validated_results:
-        print("⚠️ Không có validated results từ workers")
+        print("⚠️ No validated results from workers")
         return {
             'final_estimation_data': [],
             'total_effort': 0.0,
@@ -617,11 +617,11 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
             'workflow_status': 'no_results'
         }
 
-    # Tính toán summary statistics
+    # Calculate summary statistics
     total_effort = sum(task.get('estimation_manday', 0) for task in validated_results)
     total_confidence = sum(task.get('confidence_level', 0) for task in validated_results) / len(validated_results)
 
-    # Tạo validation summary
+    # Create validation summary
     validation_summary = {
         'total_tasks': len(validated_results),
         'total_effort_mandays': total_effort,
@@ -686,10 +686,10 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
         'adjustment_percentage': (total_adjustment / total_effort * 100) if total_effort > 0 else 0
     }
 
-    # Tạo enhanced mermaid diagram
+    # Create enhanced mermaid diagram
     mermaid_diagram = create_enhanced_mermaid_diagram(validated_results, validation_summary)
 
-    print(f"✅ Enhanced Synthesizer hoàn thành:")
+    print(f"✅ Enhanced Synthesizer completed:")
     print(f"   - {len(validated_results)} tasks")
     print(f"   - {total_effort:.1f} mandays total")
     print(f"   - {total_confidence:.2f} average confidence")
@@ -710,7 +710,7 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
 
 def create_enhanced_mermaid_diagram(validated_results: List[Dict[str, Any]], validation_summary: Dict[str, Any]) -> str:
     """
-    Tạo enhanced mermaid diagram với dependencies và risk indicators
+    Create enhanced mermaid diagram with dependencies and risk indicators
     """
     # Extract summary info
     total_tasks = validation_summary.get('total_tasks', len(validated_results))
@@ -793,7 +793,7 @@ graph TD
 
 def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], filename: str = None) -> str:
     """
-    Enhanced Excel export với detailed analysis
+    Enhanced Excel export with detailed analysis
     """
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -803,7 +803,7 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
 
     try:
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-            # Main estimation table với enhanced columns
+            # Main estimation table with enhanced columns
             estimation_columns = [
                 'id', 'category', 'parent_task', 'sub_task', 'description',
                 'estimation_manday', 'original_estimation', 'confidence_level',
@@ -884,7 +884,7 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
         return filepath
 
     except Exception as e:
-        print(f"❌ Lỗi khi export Enhanced Excel: {e}")
+        print(f"❌ Error exporting Enhanced Excel: {e}")
         return ""
 
 # ========================
@@ -893,7 +893,7 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
 
 class EnhancedEstimationWorkflow:
     """
-    Enhanced Estimation Workflow với specialized workers
+    Enhanced Estimation Workflow with specialized workers
     """
 
     def __init__(self):
@@ -904,7 +904,7 @@ class EnhancedEstimationWorkflow:
     def _build_workflow(self):
         """Build enhanced LangGraph workflow"""
 
-        # Tạo StateGraph
+        # Create StateGraph
         builder = StateGraph(EnhancedOrchestratorState)
 
         # Add nodes
@@ -945,13 +945,13 @@ class EnhancedEstimationWorkflow:
         # Compile workflow
         self.workflow = builder.compile(checkpointer=self.memory)
 
-        print("✅ Enhanced Estimation Workflow đã được build thành công!")
+        print("✅ Enhanced Estimation Workflow built successfully!")
 
     def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
         """
-        Chạy enhanced estimation workflow
+        Run enhanced estimation workflow
         """
-        print(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
+        print(f"🚀 Starting Enhanced Estimation Workflow for task: {task_description}")
 
         initial_state = {
             "original_task": task_description,
@@ -973,12 +973,12 @@ class EnhancedEstimationWorkflow:
             config = {"configurable": {"thread_id": thread_id}}
             result = self.workflow.invoke(initial_state, config=config)
 
-            print(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
+            print(f"🎉 Enhanced Workflow completed with status: {result.get('workflow_status', 'unknown')}")
 
             return result
 
         except Exception as e:
-            print(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
+            print(f"❌ Error running Enhanced Workflow: {e}")
             return {
                 "workflow_status": "failed",
                 "error": str(e)
@@ -986,11 +986,11 @@ class EnhancedEstimationWorkflow:
 
     def export_results(self, result: Dict[str, Any], filename: str = None) -> str:
         """
-        Enhanced export kết quả ra Excel
+        Enhanced export results to Excel
         """
         estimation_data = result.get('final_estimation_data', [])
         if not estimation_data:
-            print("⚠️ Không có dữ liệu để export")
+            print("⚠️ No data to export")
             return ""
 
         df = pd.DataFrame(estimation_data)
@@ -999,19 +999,19 @@ class EnhancedEstimationWorkflow:
 
     def get_mermaid_diagram(self, result: Dict[str, Any]) -> str:
         """
-        Lấy enhanced mermaid diagram từ kết quả
+        Get enhanced mermaid diagram from results
         """
         return result.get('mermaid_diagram', '')
 
     def get_validation_summary(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Lấy validation summary từ kết quả
+        Get validation summary from results
         """
         return result.get('validation_summary', {})
 
     def visualize_workflow(self) -> str:
         """
-        Tạo visualization của enhanced workflow graph
+        Create visualization of enhanced workflow graph
         """
         try:
             # Get workflow graph
@@ -1025,11 +1025,11 @@ class EnhancedEstimationWorkflow:
             with open(filename, 'wb') as f:
                 f.write(mermaid_png)
 
-            print(f"✅ Đã tạo enhanced workflow diagram: {filename}")
+            print(f"✅ Created enhanced workflow diagram: {filename}")
             return filename
 
         except Exception as e:
-            print(f"❌ Lỗi khi tạo enhanced workflow diagram: {e}")
+            print(f"❌ Error creating enhanced workflow diagram: {e}")
             return ""
 
 # ========================
@@ -1037,29 +1037,29 @@ class EnhancedEstimationWorkflow:
 # ========================
 
 if __name__ == "__main__":
-    # Khởi tạo enhanced workflow
+    # Initialize enhanced workflow
     enhanced_workflow = EnhancedEstimationWorkflow()
 
     # Example task
     sample_task = """
-    Phát triển một ứng dụng web e-commerce hoàn chỉnh với các tính năng:
-    - Quản lý sản phẩm (CRUD) với image upload
-    - Giỏ hàng và thanh toán với multiple payment methods
-    - Quản lý người dùng và authentication với social login
-    - Admin dashboard với analytics
-    - Responsive design cho mobile và desktop
+    Develop a complete web e-commerce application with features:
+    - Product management (CRUD) with image upload
+    - Shopping cart and payment with multiple payment methods
+    - User management and authentication with social login
+    - Admin dashboard with analytics
+    - Responsive design for mobile and desktop
     - Payment gateway integration (Stripe, PayPal)
-    - Email notifications và SMS alerts
-    - Advanced search và filtering với Elasticsearch
-    - Product recommendations với ML
+    - Email notifications and SMS alerts
+    - Advanced search and filtering with Elasticsearch
+    - Product recommendations with ML
     - Multi-language support
     - Real-time chat support
     """
 
-    # Chạy estimation (without GraphRAG for this example)
+    # Run estimation (without GraphRAG for this example)
     result = enhanced_workflow.run_estimation(sample_task, graphrag_insights=None)
 
-    # Xuất kết quả
+    # Export results
     if result.get('workflow_status') == 'completed':
         excel_file = enhanced_workflow.export_results(result)
         mermaid_diagram = enhanced_workflow.get_mermaid_diagram(result)
@@ -1074,5 +1074,5 @@ if __name__ == "__main__":
 
         print(f"\n🎨 Enhanced Mermaid Diagram:\n{mermaid_diagram}")
 
-    # Tạo workflow visualization
+    # Create workflow visualization
     workflow_diagram = enhanced_workflow.visualize_workflow()

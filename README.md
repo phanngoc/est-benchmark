@@ -1,17 +1,17 @@
 # 🧠 Fast GraphRAG Document Analyzer
 
-Ứng dụng Streamlit để test và sử dụng [Fast GraphRAG](https://github.com/circlemind-ai/fast-graphrag) cho việc phân tích và truy vấn nhiều file tài liệu.
+A Streamlit application to test and use [Fast GraphRAG](https://github.com/circlemind-ai/fast-graphrag) for analyzing and querying multiple document files, with a focus on project estimation and task breakdown.
 
-## ✨ Tính năng chính
+## ✨ Key Features
 
-- 📁 **Upload đa dạng loại file**: TXT, PDF, DOCX, MD
-- 🧠 **Phân tích thông minh**: Sử dụng Fast GraphRAG để tạo knowledge graph
-- 🔍 **Truy vấn tự nhiên**: Hỏi đáp bằng tiếng Việt
-- 📊 **Visualization**: Hiển thị mối quan hệ giữa các thực thể
-- 📜 **Lịch sử truy vấn**: Lưu trữ và quản lý các câu hỏi đã hỏi
-- ⚙️ **Cấu hình linh hoạt**: Tùy chỉnh domain, entity types, example queries
+- 📁 **Multi-format file upload**: TXT, PDF, DOCX, MD
+- 🧠 **Intelligent analysis**: Uses Fast GraphRAG to create knowledge graphs
+- 🔍 **Natural language queries**: Ask questions in Vietnamese and English
+- 📊 **Visualization**: Display relationships between entities
+- 📜 **Query history**: Store and manage previously asked questions
+- ⚙️ **Flexible configuration**: Customize domain, entity types, example queries
 
-## 🚀 Cài đặt
+## 🚀 Installation
 
 ### 1. Clone repository
 
@@ -20,21 +20,21 @@ git clone <repository-url>
 cd est-benchmark
 ```
 
-### 2. Cài đặt dependencies
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Cấu hình môi trường
+### 3. Environment configuration
 
-Tạo file `.env` từ `env.example`:
+Create `.env` file from `env.example`:
 
 ```bash
 cp env.example .env
 ```
 
-Chỉnh sửa file `.env` và thêm OpenAI API key:
+Edit the `.env` file and add your OpenAI API key:
 
 ```env
 OPENAI_API_KEY=sk-your-openai-api-key-here
@@ -42,54 +42,54 @@ OPENAI_MODEL=gpt-4o-mini
 CONCURRENT_TASK_LIMIT=8
 ```
 
-### 4. Chạy ứng dụng
+### 4. Run the application
 
 ```bash
 streamlit run app.py
 ```
 
-Ứng dụng sẽ mở tại `http://localhost:8501`
+The application will open at `http://localhost:8501`
 
-## 📖 Hướng dẫn sử dụng
+## 📖 User Guide
 
-### Bước 1: Cấu hình
-1. Mở ứng dụng trong trình duyệt
-2. Nhập OpenAI API key vào sidebar
-3. Thiết lập domain description (mô tả lĩnh vực phân tích)
-4. Chọn entity types (các loại thực thể cần nhận diện)
-5. Nhập example queries (câu hỏi mẫu)
-6. Nhấn "Khởi tạo GraphRAG"
+### Step 1: Configuration
+1. Open the application in your browser
+2. Enter your OpenAI API key in the sidebar
+3. Set up domain description (description of the analysis domain)
+4. Select entity types (types of entities to identify)
+5. Enter example queries (sample questions)
+6. Click "Initialize GraphRAG"
 
-### Bước 2: Upload tài liệu
-1. Chuyển đến tab "Upload Files"
-2. Chọn các file cần phân tích (TXT, PDF, DOCX, MD)
-3. Nhấn "Xử lý Files" để trích xuất nội dung
-4. Nhấn "Thêm vào GraphRAG" để xử lý
+### Step 2: Upload documents
+1. Navigate to the "Upload Files" tab
+2. Select files to analyze (TXT, PDF, DOCX, MD)
+3. Click "Process Files" to extract content
+4. Click "Add to GraphRAG" to process
 
-### Bước 3: Truy vấn
-1. Chuyển đến tab "Query"
-2. Nhập câu hỏi của bạn
-3. Chọn có hiển thị references hay không
-4. Nhấn "Tìm kiếm" để nhận câu trả lời
+### Step 3: Query
+1. Navigate to the "Query" tab
+2. Enter your question
+3. Choose whether to show references or not
+4. Click "Search" to get the answer
 
-### Bước 4: Visualization
-1. Chuyển đến tab "Visualization"
-2. Xem thống kê và biểu đồ về dữ liệu đã xử lý
+### Step 4: Visualization
+1. Navigate to the "Visualization" tab
+2. View statistics and charts about processed data
 
-## 📁 Cấu trúc dự án
+## 📁 Project Structure
 
 ```
 est-benchmark/
-├── app.py                 # Ứng dụng Streamlit chính
-├── config.py             # Cấu hình
+├── app.py                 # Main Streamlit application
+├── config.py             # Configuration
 ├── requirements.txt      # Dependencies
-├── env.example          # Mẫu file môi trường
+├── env.example          # Environment file template
 ├── utils/               # Utility modules
 │   ├── __init__.py
-│   ├── file_processor.py  # Xử lý file upload
-│   ├── graphrag_handler.py # Wrapper cho Fast GraphRAG
-│   └── visualization.py   # Hiển thị graph
-├── examples/            # Tài liệu mẫu
+│   ├── file_processor.py  # File upload processing
+│   ├── graphrag_handler.py # Fast GraphRAG wrapper
+│   └── visualization.py   # Graph visualization
+├── examples/            # Sample documents
 │   └── sample_docs/
 │       ├── sample1.txt
 │       ├── sample2.txt
@@ -98,23 +98,27 @@ est-benchmark/
 └── README.md
 ```
 
-## 🔧 Cấu hình nâng cao
+## 🔧 Advanced Configuration
 
-### Entity Types mặc định
-- Person: Người
-- Organization: Tổ chức
-- Location: Địa điểm
-- Concept: Khái niệm
-- Event: Sự kiện
-- Document: Tài liệu
-- Topic: Chủ đề
+### Default Entity Types
+- Category: Development categories
+- ParentTask: Main tasks to be implemented
+- SubTask: Specific subtasks for each parent task
+- Feature: System features
+- Component: System components
+- API: API endpoints and services
+- Database: Database entities and schemas
+- Requirement: Functional and non-functional requirements
+- Dependency: Task dependencies
+- Estimation: Effort and time estimates
 
-### Example Queries mặc định
-- "Tài liệu này nói về chủ đề gì?"
-- "Có những nhân vật chính nào được đề cập?"
-- "Mối quan hệ giữa các thực thể là gì?"
-- "Những sự kiện quan trọng nào được mô tả?"
-- "Tài liệu này có những thông tin gì quan trọng?"
+### Default Example Queries
+- "What development categories does this document contain?"
+- "What are the main parent tasks that need to be implemented?"
+- "What are the specific subtasks for each parent task?"
+- "How are the effort estimates for these tasks calculated?"
+- "What are the dependencies between tasks?"
+- "How is the priority of tasks determined?"
 
 ## 📚 Dependencies
 
@@ -131,60 +135,64 @@ est-benchmark/
 
 ## 🎯 Use Cases
 
-### 1. Phân tích tài liệu học thuật
-- Upload các bài nghiên cứu, luận văn
-- Tìm kiếm thông tin liên quan đến chủ đề cụ thể
-- Phân tích mối quan hệ giữa các khái niệm
+### 1. Project estimation and task breakdown
+- Upload project requirements and specifications
+- Break down complex projects into categories, parent tasks, and subtasks
+- Generate effort estimates and identify dependencies
+- Analyze task priorities and resource allocation
 
-### 2. Xử lý tài liệu doanh nghiệp
-- Upload báo cáo, hợp đồng, tài liệu pháp lý
-- Tìm kiếm thông tin nhanh chóng
-- Phân tích nội dung và xu hướng
+### 2. Technical document analysis
+- Upload technical specifications, API documentation
+- Identify system components, features, and requirements
+- Analyze database schemas and API endpoints
+- Track dependencies between different system modules
 
-### 3. Nghiên cứu thị trường
-- Upload các báo cáo thị trường
-- Phân tích xu hướng và cơ hội
-- So sánh các công ty và sản phẩm
+### 3. Software development planning
+- Upload user stories, feature requirements
+- Categorize development tasks by complexity and priority
+- Estimate development effort and timeline
+- Identify critical path and potential bottlenecks
 
-### 4. Giáo dục và đào tạo
-- Upload tài liệu học tập
-- Tạo hệ thống hỏi đáp thông minh
-- Phân tích nội dung khóa học
+### 4. Project management and documentation
+- Upload project plans, meeting notes, technical reviews
+- Extract actionable tasks and requirements
+- Track progress and dependencies
+- Generate comprehensive project reports
 
 ## 🐛 Troubleshooting
 
-### Lỗi API Key
-- Đảm bảo đã nhập đúng OpenAI API key
-- Kiểm tra API key có đủ quota không
+### API Key Error
+- Ensure you have entered the correct OpenAI API key
+- Check if the API key has sufficient quota
 
-### Lỗi xử lý file
-- Kiểm tra file có đúng định dạng không
-- Đảm bảo file không quá lớn (giới hạn 200MB)
+### File Processing Error
+- Check if the file format is correct (TXT, PDF, DOCX, MD only)
+- Ensure the file is not too large (200MB limit)
 
-### Lỗi GraphRAG
-- Đảm bảo đã khởi tạo GraphRAG trước khi sử dụng
-- Kiểm tra cấu hình domain và entity types
+### GraphRAG Error
+- Ensure GraphRAG has been initialized before use
+- Check domain and entity types configuration
 
-## 🤝 Đóng góp
+## 🤝 Contributing
 
-Mọi đóng góp đều được chào đón! Vui lòng:
+All contributions are welcome! Please:
 
-1. Fork repository
-2. Tạo feature branch
-3. Commit changes
-4. Push to branch
-5. Tạo Pull Request
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## 📄 License
 
-Dự án này được phân phối dưới MIT License. Xem file `LICENSE` để biết thêm chi tiết.
+This project is distributed under the MIT License. See the `LICENSE` file for more details.
 
 ## 🙏 Acknowledgments
 
-- [Fast GraphRAG](https://github.com/circlemind-ai/fast-graphrag) - Framework chính
+- [Fast GraphRAG](https://github.com/circlemind-ai/fast-graphrag) - Main framework
 - [Streamlit](https://streamlit.io/) - Web framework
 - [OpenAI](https://openai.com/) - Language model API
 
-## 📞 Liên hệ
+## 📞 Contact
 
-Nếu có câu hỏi hoặc góp ý, vui lòng tạo issue trên GitHub repository.
+If you have questions or suggestions, please create an issue on the GitHub repository.

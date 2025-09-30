@@ -38,7 +38,7 @@ if 'estimation_in_progress' not in st.session_state:
 
 def auto_analyze_project_scope(graphrag_handler) -> str:
     """
-    Auto-generate comprehensive project description từ uploaded documents
+    Auto-generate comprehensive project description from uploaded documents
     """
     if not graphrag_handler or not graphrag_handler.is_initialized:
         return ""
@@ -68,29 +68,29 @@ def auto_analyze_project_scope(graphrag_handler) -> str:
 
     # Combine insights into comprehensive project description
     combined_description = f"""
-Phát triển dự án với các yêu cầu sau được trích xuất từ tài liệu:
+Develop a project with the following requirements extracted from documents:
 
 {chr(10).join([f"- {insight}" for insight in project_insights])}
 
-Dự án cần được chia nhỏ thành các tasks cụ thể với estimation effort phù hợp cho middle developer (3 năm kinh nghiệm).
+The project needs to be broken down into specific tasks with effort estimation suitable for middle developer (3 years experience).
 """
 
     return combined_description.strip()
 
 def run_project_estimation():
     """
-    Main function để chạy project estimation với Streamlit integration
+    Main function to run project estimation with Streamlit integration
     """
     if st.session_state.estimation_in_progress:
-        st.warning("🔄 Estimation đang chạy. Vui lòng đợi...")
+        st.warning("🔄 Estimation is running. Please wait...")
         return
 
     if not st.session_state.graphrag_handler.is_initialized:
-        st.error("❌ GraphRAG chưa được khởi tạo. Vui lòng khởi tạo GraphRAG trước.")
+        st.error("❌ GraphRAG is not initialized. Please initialize GraphRAG first.")
         return
 
     if not st.session_state.processed_files:
-        st.error("❌ Chưa có tài liệu nào được xử lý. Vui lòng upload và xử lý tài liệu trước.")
+        st.error("❌ No documents have been processed. Please upload and process documents first.")
         return
 
     try:
@@ -100,17 +100,17 @@ def run_project_estimation():
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        status_text.text("🔍 Đang phân tích tài liệu để hiểu project scope...")
+        status_text.text("🔍 Analyzing documents to understand project scope...")
         progress_bar.progress(10)
 
         project_description = auto_analyze_project_scope(st.session_state.graphrag_handler)
 
         if not project_description:
-            st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
+            st.error("❌ Cannot analyze project from documents. Please check the documents again.")
             return
 
         # Step 2: Pre-fetch GraphRAG insights to avoid serialization issues
-        status_text.text("🔍 Đang pre-fetch GraphRAG insights...")
+        status_text.text("🔍 Pre-fetching GraphRAG insights...")
         progress_bar.progress(20)
 
         # Pre-fetch additional insights for estimation
@@ -134,7 +134,7 @@ def run_project_estimation():
                 st.warning(f"Could not fetch insight for: {query[:50]}...")
 
         # Step 3: Run estimation workflow
-        status_text.text("🚀 Đang chạy estimation workflow...")
+        status_text.text("🚀 Running estimation workflow...")
         progress_bar.progress(50)
 
         result = st.session_state.estimation_workflow.run_estimation(
@@ -143,11 +143,11 @@ def run_project_estimation():
         )
 
         if result and result.get('workflow_status') == 'completed':
-            status_text.text("✅ Estimation hoàn thành!")
+            status_text.text("✅ Estimation completed!")
             progress_bar.progress(100)
 
             st.session_state.project_estimation_result = result
-            st.success("🎉 Project estimation đã hoàn thành thành công!")
+            st.success("🎉 Project estimation completed successfully!")
 
             # Display summary
             total_effort = result.get('total_effort', 0)
@@ -163,10 +163,10 @@ def run_project_estimation():
                 st.metric("Avg Confidence", f"{total_confidence:.0%}")
 
         else:
-            st.error("❌ Estimation workflow failed. Vui lòng thử lại.")
+            st.error("❌ Estimation workflow failed. Please try again.")
 
     except Exception as e:
-        st.error(f"❌ Lỗi khi chạy estimation: {str(e)}")
+        st.error(f"❌ Error running estimation: {str(e)}")
     finally:
         st.session_state.estimation_in_progress = False
 
@@ -179,87 +179,87 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("⚙️ Cấu hình")
+        st.header("⚙️ Configuration")
         
         # API Key input
         api_key = st.text_input(
             "OpenAI API Key",
             value=Config.OPENAI_API_KEY,
             type="password",
-            help="Nhập API key của bạn từ OpenAI"
+            help="Enter your API key from OpenAI"
         )
         
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
         
         # Domain configuration
-        st.subheader("📝 Cấu hình Domain")
+        st.subheader("📝 Domain Configuration")
         domain = st.text_area(
-            "Mô tả domain:",
+            "Domain description:",
             value=Config.DEFAULT_DOMAIN,
             height=100,
-            help="Mô tả lĩnh vực và mục tiêu phân tích tài liệu"
+            help="Describe the field and objectives for document analysis"
         )
         
         # Entity types
         st.subheader("🏷️ Entity Types")
         entity_types_input = st.text_area(
-            "Các loại thực thể (mỗi dòng một loại):",
+            "Entity types (one per line):",
             value="\n".join(Config.DEFAULT_ENTITY_TYPES),
             height=150,
-            help="Các loại thực thể mà bạn muốn GraphRAG nhận diện"
+            help="Entity types that you want GraphRAG to recognize"
         )
         entity_types = [t.strip() for t in entity_types_input.split('\n') if t.strip()]
         
         # Example queries
         st.subheader("❓ Example Queries")
         example_queries_input = st.text_area(
-            "Các câu hỏi mẫu (mỗi dòng một câu hỏi):",
+            "Sample queries (one per line):",
             value="\n".join(Config.DEFAULT_EXAMPLE_QUERIES),
             height=150,
-            help="Các câu hỏi mẫu để GraphRAG hiểu cách trả lời"
+            help="Sample queries to help GraphRAG understand how to respond"
         )
         example_queries = [q.strip() for q in example_queries_input.split('\n') if q.strip()]
         
         # Initialize GraphRAG button
-        if st.button("🚀 Khởi tạo GraphRAG", type="primary"):
-            with st.spinner("Đang khởi tạo GraphRAG..."):
+        if st.button("🚀 Initialize GraphRAG", type="primary"):
+            with st.spinner("Initializing GraphRAG..."):
                 success = st.session_state.graphrag_handler.initialize(
                     domain=domain,
                     entity_types=entity_types,
                     example_queries=example_queries
                 )
                 if success:
-                    st.success("✅ GraphRAG đã được khởi tạo thành công!")
+                    st.success("✅ GraphRAG initialized successfully!")
                 else:
-                    st.error("❌ Lỗi khi khởi tạo GraphRAG")
+                    st.error("❌ Error initializing GraphRAG")
     
     # Main content area
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
     
     with tab1:
-        st.header("📁 Upload và Xử lý Tài liệu")
+        st.header("📁 Upload and Process Documents")
         
         # File upload
         uploaded_files = st.file_uploader(
-            "Chọn tài liệu để phân tích",
+            "Select documents to analyze",
             type=['txt', 'pdf', 'docx', 'md'],
             accept_multiple_files=True,
-            help="Hỗ trợ: TXT, PDF, DOCX, MD (tối đa 200MB mỗi file)"
+            help="Supported: TXT, PDF, DOCX, MD (max 200MB per file)"
         )
         
         if uploaded_files:
             # Process files
-            if st.button("🔄 Xử lý Files", type="primary"):
-                with st.spinner("Đang xử lý files..."):
+            if st.button("🔄 Process Files", type="primary"):
+                with st.spinner("Processing files..."):
                     processed_files = FileProcessor.process_uploaded_files(uploaded_files)
                     st.session_state.processed_files = processed_files
                     
                     if processed_files:
-                        st.success(f"✅ Đã xử lý thành công {len(processed_files)} files!")
+                        st.success(f"✅ Successfully processed {len(processed_files)} files!")
                         
                         # Show file info
-                        st.subheader("📋 Thông tin Files")
+                        st.subheader("📋 File Information")
                         for file_info in processed_files:
                             with st.expander(f"📄 {file_info['name']} ({file_info['size_mb']:.1f}MB)"):
                                 preview = FileProcessor.get_file_preview(file_info['content'])
@@ -267,7 +267,7 @@ def main():
         
         # Show processed files
         if st.session_state.processed_files:
-            st.subheader("📚 Files đã xử lý")
+            st.subheader("📚 Processed Files")
             
             # File statistics
             total_size = sum(f['size_mb'] for f in st.session_state.processed_files)
@@ -278,16 +278,16 @@ def main():
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Tổng số files", len(st.session_state.processed_files))
+                st.metric("Total Files", len(st.session_state.processed_files))
             with col2:
-                st.metric("Tổng dung lượng", f"{total_size:.1f} MB")
+                st.metric("Total Size", f"{total_size:.1f} MB")
             with col3:
-                st.metric("Loại files", len(file_types))
+                st.metric("File Types", len(file_types))
             
             # Insert into GraphRAG
             if st.session_state.graphrag_handler.is_initialized:
-                if st.button("📥 Thêm vào GraphRAG", type="primary"):
-                    with st.spinner("Đang thêm tài liệu vào GraphRAG..."):
+                if st.button("📥 Add to GraphRAG", type="primary"):
+                    with st.spinner("Adding documents to GraphRAG..."):
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
@@ -301,33 +301,33 @@ def main():
                         )
                         
                         if success:
-                            st.success("✅ Đã thêm tài liệu vào GraphRAG thành công!")
+                            st.success("✅ Successfully added documents to GraphRAG!")
                         else:
-                            st.error("❌ Lỗi khi thêm tài liệu vào GraphRAG")
+                            st.error("❌ Error adding documents to GraphRAG")
             else:
-                st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi thêm tài liệu")
+                st.warning("⚠️ Please initialize GraphRAG before adding documents")
     
     with tab2:
-        st.header("🔍 Truy vấn GraphRAG")
+        st.header("🔍 Query GraphRAG")
         
         if not st.session_state.graphrag_handler.is_initialized:
-            st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi truy vấn")
+            st.warning("⚠️ Please initialize GraphRAG before querying")
         else:
             # Query input
             query = st.text_input(
-                "Nhập câu hỏi của bạn:",
-                placeholder="Ví dụ: Tài liệu này nói về chủ đề gì?",
-                help="Nhập câu hỏi để tìm kiếm thông tin từ tài liệu đã xử lý"
+                "Enter your question:",
+                placeholder="Example: What topics does this document discuss?",
+                help="Enter a question to search for information from processed documents"
             )
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                with_references = st.checkbox("Hiển thị references", value=True)
+                with_references = st.checkbox("Show references", value=True)
             
             with col2:
-                if st.button("🔍 Tìm kiếm", type="primary"):
+                if st.button("🔍 Search", type="primary"):
                     if query:
-                        with st.spinner("Đang tìm kiếm..."):
+                        with st.spinner("Searching..."):
                             result = st.session_state.graphrag_handler.query(
                                 query, 
                                 with_references=with_references
@@ -338,7 +338,7 @@ def main():
                                 st.session_state.query_history.append(result)
                                 
                                 # Display result
-                                st.subheader("💡 Kết quả")
+                                st.subheader("💡 Result")
                                 st.write(result['response'])
                                 
                                 # Display references if available
@@ -348,13 +348,13 @@ def main():
                                     )
                                     st.markdown(references_html, unsafe_allow_html=True)
                             else:
-                                st.error("❌ Không thể thực hiện truy vấn")
+                                st.error("❌ Unable to perform query")
                     else:
-                        st.warning("⚠️ Vui lòng nhập câu hỏi")
+                        st.warning("⚠️ Please enter a question")
             
             # Query history
             if st.session_state.query_history:
-                st.subheader("📜 Lịch sử Truy vấn")
+                st.subheader("📜 Query History")
                 
                 # Create query history table
                 history_df = GraphVisualization.create_query_results_table(
@@ -363,7 +363,7 @@ def main():
                 st.dataframe(history_df, use_container_width=True)
                 
                 # Clear history button
-                if st.button("🗑️ Xóa lịch sử"):
+                if st.button("🗑️ Clear History"):
                     st.session_state.query_history = []
                     st.rerun()
 
@@ -391,21 +391,21 @@ def main():
 
         # Main estimation section
         if not st.session_state.graphrag_handler.is_initialized:
-            st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi thực hiện estimation.")
-            st.info("💡 Đi đến tab 'Upload Files' để khởi tạo GraphRAG và upload tài liệu.")
+            st.warning("⚠️ Please initialize GraphRAG before performing estimation.")
+            st.info("💡 Go to 'Upload Files' tab to initialize GraphRAG and upload documents.")
         elif not st.session_state.processed_files:
-            st.warning("⚠️ Vui lòng upload và xử lý tài liệu trước khi thực hiện estimation.")
-            st.info("💡 Đi đến tab 'Upload Files' để upload tài liệu dự án.")
+            st.warning("⚠️ Please upload and process documents before performing estimation.")
+            st.info("💡 Go to 'Upload Files' tab to upload project documents.")
         else:
             # One-click estimation button
             st.subheader("🚀 Auto Project Analysis & Estimation")
             st.markdown("""
-            **Chức năng này sẽ:**
-            - 🔍 Tự động phân tích toàn bộ tài liệu đã upload
-            - 🧠 Sử dụng GraphRAG để hiểu project scope và requirements
-            - 📋 Chia nhỏ project thành các tasks cụ thể
-            - ⏱️ Estimate effort cho từng task (target: middle developer 3 năm kinh nghiệm)
-            - 📊 Tạo báo cáo estimation hoàn chỉnh với Excel export
+            **This feature will:**
+            - 🔍 Automatically analyze all uploaded documents
+            - 🧠 Use GraphRAG to understand project scope and requirements
+            - 📋 Break down project into specific tasks
+            - ⏱️ Estimate effort for each task (target: middle developer 3 years experience)
+            - 📊 Generate complete estimation report with Excel export
             """)
 
             # Big estimation button
@@ -495,21 +495,21 @@ def main():
         st.header("📊 Visualization")
         
         if not st.session_state.graphrag_handler.is_initialized:
-            st.warning("⚠️ Vui lòng khởi tạo GraphRAG và thêm tài liệu trước khi xem visualization")
+            st.warning("⚠️ Please initialize GraphRAG and add documents before viewing visualization")
         else:
             # Get graph info
             graph_info = st.session_state.graphrag_handler.get_graph_info()
             
             if graph_info:
-                st.subheader("📈 Thống kê Graph")
+                st.subheader("📈 Graph Statistics")
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Trạng thái", "✅ Đã khởi tạo" if graph_info.get('is_initialized') else "❌ Chưa khởi tạo")
+                    st.metric("Status", "✅ Initialized" if graph_info.get('is_initialized') else "❌ Not Initialized")
                 with col2:
                     st.metric("Working Directory", graph_info.get('working_dir', 'N/A'))
                 with col3:
-                    st.metric("Cập nhật cuối", graph_info.get('timestamp', 'N/A')[:19] if graph_info.get('timestamp') else 'N/A')
+                    st.metric("Last Updated", graph_info.get('timestamp', 'N/A')[:19] if graph_info.get('timestamp') else 'N/A')
                 
                 # File processing stats
                 if st.session_state.processed_files:
@@ -523,37 +523,37 @@ def main():
                     if fig.data:
                         st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("ℹ️ Chưa có dữ liệu để hiển thị")
+                st.info("ℹ️ No data to display")
     
     with tab5:
-        st.header("ℹ️ Thông tin Ứng dụng")
+        st.header("ℹ️ Application Information")
         
         st.markdown("""
         ### 🧠 Fast GraphRAG Document Analyzer
         
-        Ứng dụng này sử dụng **Fast GraphRAG** để phân tích và truy vấn tài liệu một cách thông minh.
+        This application uses **Fast GraphRAG** to intelligently analyze and query documents.
         
-        #### ✨ Tính năng chính:
-        - 📁 **Upload đa dạng loại file**: TXT, PDF, DOCX, MD
-        - 🧠 **Phân tích thông minh**: Sử dụng GraphRAG để tạo knowledge graph
-        - 🔍 **Truy vấn tự nhiên**: Hỏi đáp bằng tiếng Việt
-        - 📊 **Visualization**: Hiển thị mối quan hệ giữa các thực thể
-        - 📜 **Lịch sử truy vấn**: Lưu trữ và quản lý các câu hỏi đã hỏi
+        #### ✨ Key Features:
+        - 📁 **Multi-format file upload**: TXT, PDF, DOCX, MD
+        - 🧠 **Intelligent analysis**: Uses GraphRAG to create knowledge graphs
+        - 🔍 **Natural language queries**: Ask questions in Vietnamese and English
+        - 📊 **Visualization**: Display relationships between entities
+        - 📜 **Query history**: Store and manage previously asked questions
         
-        #### 🚀 Cách sử dụng:
-        1. **Cấu hình**: Nhập OpenAI API key và thiết lập domain
-        2. **Upload**: Chọn và upload các file tài liệu
-        3. **Xử lý**: Thêm tài liệu vào GraphRAG
-        4. **Truy vấn**: Đặt câu hỏi và nhận câu trả lời thông minh
-        5. **Visualization**: Xem biểu đồ và thống kê
+        #### 🚀 How to use:
+        1. **Configuration**: Enter OpenAI API key and set up domain
+        2. **Upload**: Select and upload document files
+        3. **Process**: Add documents to GraphRAG
+        4. **Query**: Ask questions and receive intelligent answers
+        5. **Visualization**: View charts and statistics
         
-        #### 🔧 Cấu hình:
-        - **Domain**: Mô tả lĩnh vực và mục tiêu phân tích
-        - **Entity Types**: Các loại thực thể cần nhận diện
-        - **Example Queries**: Câu hỏi mẫu để hướng dẫn AI
+        #### 🔧 Configuration:
+        - **Domain**: Describe the field and analysis objectives
+        - **Entity Types**: Types of entities to recognize
+        - **Example Queries**: Sample questions to guide AI
         
         #### 📚 Dependencies:
-        - Fast GraphRAG: Framework chính
+        - Fast GraphRAG: Main framework
         - OpenAI: Language model
         - Streamlit: Web interface
         - Plotly: Visualization
@@ -561,12 +561,12 @@ def main():
         """)
         
         # System info
-        st.subheader("🔧 Thông tin Hệ thống")
+        st.subheader("🔧 System Information")
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown(f"""
-            **Cấu hình:**
+            **Configuration:**
             - Working Directory: `{Config.WORKING_DIR}`
             - Max File Size: {Config.MAX_FILE_SIZE / (1024*1024):.0f}MB
             - Supported Extensions: {', '.join(Config.ALLOWED_EXTENSIONS)}
@@ -574,7 +574,7 @@ def main():
         
         with col2:
             st.markdown(f"""
-            **Trạng thái:**
+            **Status:**
             - GraphRAG Initialized: {'✅' if st.session_state.graphrag_handler.is_initialized else '❌'}
             - Files Processed: {len(st.session_state.processed_files)}
             - Queries Made: {len(st.session_state.query_history)}
