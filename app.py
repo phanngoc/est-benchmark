@@ -206,7 +206,7 @@ def main():
             os.environ["OPENAI_API_KEY"] = api_key
         elif Config.OPENAI_API_KEY:
             os.environ["OPENAI_API_KEY"] = Config.OPENAI_API_KEY
-        
+
         # Show API key status
         if Config.OPENAI_API_KEY:
             st.success("✅ API Key loaded from .env file")
