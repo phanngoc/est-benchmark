@@ -10,7 +10,7 @@ from config import Config
 from utils.file_processor import FileProcessor
 from utils.graphrag_handler import GraphRAGHandler
 from utils.visualization import GraphVisualization
-from enhanced_estimation_workflow import EnhancedEstimationWorkflow
+from workflow import EnhancedEstimationWorkflow
 
 # Page configuration
 st.set_page_config(
