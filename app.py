@@ -109,6 +109,18 @@ def run_project_estimation():
             st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
             return
 
+        # Display analyzed project description
+        with st.expander("📄 Project Description (Analyzed from Documents)", expanded=True):
+            st.markdown("**This is the intermediate analysis that will be used as input for the estimation workflow:**")
+            st.text_area(
+                "Auto-generated Project Scope",
+                value=project_description,
+                height=300,
+                disabled=True,
+                key="analyzed_project_desc"
+            )
+            st.info("💡 This description was automatically generated from your uploaded documents using GraphRAG analysis.")
+
         # Step 2: Pre-fetch GraphRAG insights to avoid serialization issues
         status_text.text("🔍 Đang pre-fetch GraphRAG insights...")
         progress_bar.progress(20)
@@ -186,11 +198,20 @@ def main():
             "OpenAI API Key",
             value=Config.OPENAI_API_KEY,
             type="password",
-            help="Nhập API key của bạn từ OpenAI"
+            help="Nhập API key của bạn từ OpenAI (hoặc để trống để dùng từ .env file)"
         )
         
+        # Use API key from input or fall back to config
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
+        elif Config.OPENAI_API_KEY:
+            os.environ["OPENAI_API_KEY"] = Config.OPENAI_API_KEY
+        
+        # Show API key status
+        if Config.OPENAI_API_KEY:
+            st.success("✅ API Key loaded from .env file")
+        else:
+            st.warning("⚠️ No API Key found in .env file")
         
         # Domain configuration
         st.subheader("📝 Cấu hình Domain")
