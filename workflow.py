@@ -36,11 +36,16 @@ from langgraph.checkpoint.memory import MemorySaver
 class TaskBreakdown:
     """Enhanced model cho việc break task với validation"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    category: str = ""
+    category: str = ""  # Business logic category (Authentication, User Management, etc.)
+    role: str = ""  # Backend, Frontend, QA, Infra
     parent_task: str = ""
     sub_task: str = ""
     description: str = ""
-    estimation_manday: float = 0.0
+    estimation_manday: float = 0.0  # Total estimation (sum of role-specific estimations)
+    estimation_backend_manday: float = 0.0
+    estimation_frontend_manday: float = 0.0
+    estimation_qa_manday: float = 0.0
+    estimation_infra_manday: float = 0.0
     complexity: str = "Medium"  # Low, Medium, High
     dependencies: List[str] = field(default_factory=list)
     priority: str = "Medium"  # Low, Medium, High
@@ -52,10 +57,15 @@ class TaskBreakdown:
         return {
             'id': self.id,
             'category': self.category,
+            'role': self.role,
             'parent_task': self.parent_task,
             'sub_task': self.sub_task,
             'description': self.description,
             'estimation_manday': self.estimation_manday,
+            'estimation_backend_manday': self.estimation_backend_manday,
+            'estimation_frontend_manday': self.estimation_frontend_manday,
+            'estimation_qa_manday': self.estimation_qa_manday,
+            'estimation_infra_manday': self.estimation_infra_manday,
             'complexity': self.complexity,
             'dependencies': self.dependencies,
             'priority': self.priority,
@@ -118,15 +128,31 @@ class EnhancedEstimationLLM:
 
         Nhiệm vụ của bạn:
         1. Phân tích task được cung cấp với context từ GraphRAG
-        2. Xác định các category chính cần cho dự án
+        2. Xác định các BUSINESS LOGIC CATEGORIES chính cần cho dự án
         3. Tạo chiến lược để breakdown task một cách toàn diện
         4. Chuẩn bị input cho các workers chuyên biệt
+
+        QUAN TRỌNG: Categories phải là business logic categories (không phải technical roles):
+        - Authentication & Authorization
+        - User Management
+        - Product Management
+        - Order Management
+        - Payment Processing
+        - Reporting & Analytics
+        - Notification System
+        - Content Management
+        - Search & Filtering
+        - Admin Dashboard
+        - API Integration
+        - Security & Compliance
+        - Documentation
+        v.v...
 
         Bạn sẽ có thông tin từ GraphRAG để hiểu rõ hơn về context và requirements.
 
         Trả về kết quả dưới dạng JSON với format:
         {
-            "categories": ["Frontend", "Backend", "Database", "DevOps", "Testing", "Documentation"],
+            "categories": ["Authentication & Authorization", "User Management", "Product Management", "Reporting & Analytics", "Notification System", "Documentation"],
             "analysis_strategy": "Chiến lược phân tích tổng thể",
             "complexity_assessment": "Low/Medium/High",
             "estimated_timeline": "Ước tính thời gian tổng thể"
@@ -141,13 +167,21 @@ class EnhancedEstimationLLM:
         1. Sử dụng thông tin từ GraphRAG để hiểu sâu về requirements
         2. Break down category được giao thành parent tasks và sub tasks
         3. Tạo description chi tiết cho mỗi task
-        4. Xác định dependencies và priority
+        4. XÁC ĐỊNH ROLE CHO TỪNG TASK (Backend, Frontend, QA, Infra)
+        5. Xác định dependencies và priority
 
         Nguyên tắc breakdown:
         - Mỗi sub-task phải có scope rõ ràng và có thể estimate được
         - Task size lý tưởng: 0.5-3 mandays cho middle developer
         - Xem xét dependencies giữa các task
         - Ưu tiên các task critical path
+        - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, QA, hoặc Infra)
+
+        Role definitions:
+        - Backend: API development, business logic, database operations, server-side processing
+        - Frontend: UI components, user interactions, client-side logic, responsive design
+        - QA: Testing (unit, integration, E2E), test automation, quality assurance
+        - Infra: DevOps, deployment, CI/CD, monitoring, infrastructure setup
 
         Trả về kết quả dưới dạng JSON với format:
         {
@@ -155,6 +189,7 @@ class EnhancedEstimationLLM:
                 {
                     "id": "unique_id",
                     "category": "category_name",
+                    "role": "Backend|Frontend|QA|Infra",
                     "parent_task": "Parent Task Name",
                     "sub_task": "Specific Sub Task",
                     "description": "Detailed description",
@@ -195,11 +230,22 @@ class EnhancedEstimationLLM:
         - Dependencies: Nhiều dependencies (+20-30%)
         - Risk level: High risk (+30-50%)
 
+        QUAN TRỌNG - Role-specific Estimation:
+        - Mỗi task đã được assign một role cụ thể (Backend, Frontend, QA, hoặc Infra)
+        - Bạn cần estimate effort cho role tương ứng
+        - Các role khác sẽ có estimation = 0
+        - Ví dụ: Nếu task có role="Backend", thì chỉ estimation_backend_manday > 0, còn lại = 0
+
         Trả về kết quả dưới dạng JSON với format:
         {
             "estimation": {
                 "id": "task_id",
+                "role": "Backend|Frontend|QA|Infra",
                 "estimation_manday": 2.5,
+                "estimation_backend_manday": 2.5,
+                "estimation_frontend_manday": 0.0,
+                "estimation_qa_manday": 0.0,
+                "estimation_infra_manday": 0.0,
                 "confidence_level": 0.8,
                 "breakdown": {
                     "development": 2.0,
@@ -403,12 +449,16 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         HumanMessage(content=f"""
         Task cần estimation:
         - Category: {task_breakdown.get('category', '')}
+        - Role: {task_breakdown.get('role', 'Backend')}
         - Parent Task: {task_breakdown.get('parent_task', '')}
         - Sub Task: {task_breakdown.get('sub_task', '')}
         - Description: {task_breakdown.get('description', '')}
         - Complexity: {task_breakdown.get('complexity', 'Medium')}
         - Dependencies: {task_breakdown.get('dependencies', [])}
         - Priority: {task_breakdown.get('priority', 'Medium')}
+
+        QUAN TRỌNG: Task này có role="{task_breakdown.get('role', 'Backend')}"
+        Chỉ estimate cho role này, các role khác để 0.
 
         Hãy estimate effort cho middle developer (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
         """)
@@ -426,8 +476,36 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
             # Merge với original task data
             estimated_task = task_breakdown.copy()
+            
+            # Extract role-specific estimations
+            estimation_backend = estimation_data.get('estimation_backend_manday', 0.0)
+            estimation_frontend = estimation_data.get('estimation_frontend_manday', 0.0)
+            estimation_qa = estimation_data.get('estimation_qa_manday', 0.0)
+            estimation_infra = estimation_data.get('estimation_infra_manday', 0.0)
+            
+            # Calculate total estimation
+            total_estimation = estimation_backend + estimation_frontend + estimation_qa + estimation_infra
+            
+            # If LLM didn't provide role-specific breakdown, use total and assign to appropriate role
+            if total_estimation == 0.0:
+                total_estimation = estimation_data.get('estimation_manday', 1.0)
+                task_role = task_breakdown.get('role', 'Backend')
+                if task_role == 'Backend':
+                    estimation_backend = total_estimation
+                elif task_role == 'Frontend':
+                    estimation_frontend = total_estimation
+                elif task_role == 'QA':
+                    estimation_qa = total_estimation
+                elif task_role == 'Infra':
+                    estimation_infra = total_estimation
+            
             estimated_task.update({
-                'estimation_manday': estimation_data.get('estimation_manday', 0),
+                'estimation_manday': total_estimation,
+                'estimation_backend_manday': estimation_backend,
+                'estimation_frontend_manday': estimation_frontend,
+                'estimation_qa_manday': estimation_qa,
+                'estimation_infra_manday': estimation_infra,
+                'original_estimation': total_estimation,
                 'confidence_level': estimation_data.get('confidence_level', 0.7),
                 'estimation_breakdown': estimation_data.get('breakdown', {}),
                 'risk_factors': estimation_data.get('risk_factors', []),
@@ -435,7 +513,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'estimation_worker'
             })
 
-            print(f"✅ Worker 2 estimated: {estimation_data.get('estimation_manday', 0):.1f} mandays")
+            print(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
 
             return {
                 'estimation_results': [estimated_task]
@@ -447,8 +525,21 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         print(f"❌ Lỗi trong Estimation Worker: {e}")
         # Return task với default estimation
         fallback_task = task_breakdown.copy() if task_breakdown else {}
+        task_role = fallback_task.get('role', 'Backend')
+        
+        # Assign 1.0 manday to appropriate role
+        backend_est = 1.0 if task_role == 'Backend' else 0.0
+        frontend_est = 1.0 if task_role == 'Frontend' else 0.0
+        qa_est = 1.0 if task_role == 'QA' else 0.0
+        infra_est = 1.0 if task_role == 'Infra' else 0.0
+        
         fallback_task.update({
             'estimation_manday': 1.0,  # Default fallback
+            'estimation_backend_manday': backend_est,
+            'estimation_frontend_manday': frontend_est,
+            'estimation_qa_manday': qa_est,
+            'estimation_infra_manday': infra_est,
+            'original_estimation': 1.0,
             'confidence_level': 0.5,
             'worker_source': 'estimation_worker_fallback'
         })
@@ -503,9 +594,29 @@ def validation_worker(worker_input) -> Dict[str, Any]:
 
             # Create final validated task
             validated_task = estimation_task.copy()
+            
+            # Get validated estimation (total)
+            validated_estimation = validation_data.get('validated_estimation', estimation_task.get('estimation_manday', 0))
+            original_estimation = validation_data.get('original_estimation', estimation_task.get('estimation_manday', 0))
+            
+            # Calculate adjustment ratio if validation changed the estimation
+            adjustment_ratio = 1.0
+            if original_estimation > 0:
+                adjustment_ratio = validated_estimation / original_estimation
+            
+            # Apply adjustment ratio to role-specific estimations
+            original_backend = estimation_task.get('estimation_backend_manday', 0.0)
+            original_frontend = estimation_task.get('estimation_frontend_manday', 0.0)
+            original_qa = estimation_task.get('estimation_qa_manday', 0.0)
+            original_infra = estimation_task.get('estimation_infra_manday', 0.0)
+            
             validated_task.update({
-                'estimation_manday': validation_data.get('validated_estimation', estimation_task.get('estimation_manday', 0)),
-                'original_estimation': validation_data.get('original_estimation', estimation_task.get('estimation_manday', 0)),
+                'estimation_manday': validated_estimation,
+                'estimation_backend_manday': original_backend * adjustment_ratio,
+                'estimation_frontend_manday': original_frontend * adjustment_ratio,
+                'estimation_qa_manday': original_qa * adjustment_ratio,
+                'estimation_infra_manday': original_infra * adjustment_ratio,
+                'original_estimation': original_estimation,
                 'confidence_level': validation_data.get('confidence_level', estimation_task.get('confidence_level', 0.7)),
                 'validation_notes': validation_data.get('validation_notes', ''),
                 'adjustment_reason': validation_data.get('adjustment_reason', ''),
@@ -513,7 +624,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'validation_worker'
             })
 
-            print(f"✅ Worker 3 validated: {validation_data.get('original_estimation', 0):.1f} → {validation_data.get('validated_estimation', 0):.1f} mandays")
+            print(f"✅ Worker 3 validated: {original_estimation:.1f} → {validated_estimation:.1f} mandays")
 
             return {
                 'validated_results': [validated_task]
@@ -803,10 +914,15 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
 
     try:
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-            # Main estimation table với enhanced columns
+            # Main estimation table với enhanced columns including role-specific estimations
             estimation_columns = [
-                'id', 'category', 'parent_task', 'sub_task', 'description',
-                'estimation_manday', 'original_estimation', 'confidence_level',
+                'id', 'category', 'role', 'parent_task', 'sub_task', 'description',
+                'estimation_manday', 
+                'estimation_backend_manday',
+                'estimation_frontend_manday',
+                'estimation_qa_manday',
+                'estimation_infra_manday',
+                'original_estimation', 'confidence_level',
                 'complexity', 'priority', 'worker_source', 'validation_notes',
                 'adjustment_reason', 'dependencies', 'risk_factors', 'assumptions'
             ]
@@ -851,6 +967,28 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
                 category_summary.columns = ['Task Count', 'Total Effort', 'Average Effort', 'Average Confidence']
                 category_summary = category_summary.reset_index()
                 category_summary.to_excel(writer, sheet_name='Category Analysis', index=False)
+
+            # Role breakdown - NEW SHEET
+            if 'role' in df.columns:
+                # Calculate totals for each role
+                role_summary_data = []
+                for role in ['Backend', 'Frontend', 'QA', 'Infra']:
+                    role_column = f'estimation_{role.lower()}_manday'
+                    if role_column in df.columns:
+                        total_effort = df[role_column].sum()
+                        task_count = df[df['role'] == role].shape[0]
+                        avg_effort = total_effort / task_count if task_count > 0 else 0
+                        role_summary_data.append({
+                            'Role': role,
+                            'Task Count': task_count,
+                            'Total Effort (mandays)': round(total_effort, 2),
+                            'Average Effort (mandays)': round(avg_effort, 2),
+                            'Percentage': f"{(total_effort / df['estimation_manday'].sum() * 100):.1f}%" if df['estimation_manday'].sum() > 0 else "0%"
+                        })
+                
+                if role_summary_data:
+                    role_summary_df = pd.DataFrame(role_summary_data)
+                    role_summary_df.to_excel(writer, sheet_name='Role Breakdown', index=False)
 
             # Risk analysis sheet
             risk_data = []
