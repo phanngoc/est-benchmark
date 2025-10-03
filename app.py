@@ -464,17 +464,45 @@ def main():
                     # Convert to DataFrame for better display
                     df = pd.DataFrame(estimation_data)
 
-                    # Select and rename columns for display
-                    display_columns = ['id', 'category', 'parent_task', 'sub_task', 'description', 'estimation_manday', 'confidence_level']
+                    # Select and rename columns for display - INCLUDING ROLE AND ROLE-SPECIFIC ESTIMATIONS
+                    display_columns = ['id', 'category', 'role', 'parent_task', 'sub_task', 'description', 
+                                      'estimation_backend_manday', 'estimation_frontend_manday', 
+                                      'estimation_qa_manday', 'estimation_infra_manday',
+                                      'estimation_manday', 'confidence_level']
+                    
                     if all(col in df.columns for col in display_columns):
                         display_df = df[display_columns].copy()
-                        display_df.columns = ['ID', 'Category', 'Parent Task', 'Sub Task', 'Description', 'Effort (mandays)', 'Confidence']
-                        display_df['Effort (mandays)'] = display_df['Effort (mandays)'].round(1)
+                        display_df.columns = ['ID', 'Category', 'Role', 'Parent Task', 'Sub Task', 'Description',
+                                             'Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)',
+                                             'Total (days)', 'Confidence']
+                        
+                        # Round estimation columns
+                        for col in ['Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)', 'Total (days)']:
+                            display_df[col] = display_df[col].round(1)
+                        
                         display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
 
                         st.dataframe(display_df, use_container_width=True, height=400)
                     else:
                         st.dataframe(df, use_container_width=True, height=400)
+                
+                # Add role summary metrics
+                st.subheader("👥 Effort by Role")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                total_backend = df['estimation_backend_manday'].sum() if 'estimation_backend_manday' in df.columns else 0
+                total_frontend = df['estimation_frontend_manday'].sum() if 'estimation_frontend_manday' in df.columns else 0
+                total_qa = df['estimation_qa_manday'].sum() if 'estimation_qa_manday' in df.columns else 0
+                total_infra = df['estimation_infra_manday'].sum() if 'estimation_infra_manday' in df.columns else 0
+                
+                with col1:
+                    st.metric("Backend", f"{total_backend:.1f} days")
+                with col2:
+                    st.metric("Frontend", f"{total_frontend:.1f} days")
+                with col3:
+                    st.metric("QA", f"{total_qa:.1f} days")
+                with col4:
+                    st.metric("Infra", f"{total_infra:.1f} days")
 
                 # Export and visualization section
                 st.subheader("📁 Export & Visualization")
