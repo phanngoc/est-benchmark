@@ -28,6 +28,19 @@ st.set_page_config(
 # Initialize session state
 if 'graphrag_handler' not in st.session_state:
     st.session_state.graphrag_handler = GraphRAGHandler(Config.WORKING_DIR)
+    # Auto-initialize GraphRAG with default configuration
+    if not st.session_state.graphrag_handler.is_initialized:
+        logger.info("Auto-initializing GraphRAG on application load")
+        success = st.session_state.graphrag_handler.initialize(
+            domain=Config.DEFAULT_DOMAIN,
+            entity_types=Config.DEFAULT_ENTITY_TYPES,
+            example_queries=Config.DEFAULT_EXAMPLE_QUERIES
+        )
+        if success:
+            logger.info("GraphRAG auto-initialized successfully")
+        else:
+            logger.error("GraphRAG auto-initialization failed")
+
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = []
 if 'query_history' not in st.session_state:
@@ -216,7 +229,16 @@ def main():
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Cấu hình")
-        
+
+        # System Status Indicator
+        st.markdown("### 📊 System Status")
+        if st.session_state.graphrag_handler.is_initialized:
+            st.success("🟢 GraphRAG: Ready")
+        else:
+            st.error("🔴 GraphRAG: Not Initialized")
+
+        st.divider()
+
         # API Key input
         api_key = st.text_input(
             "OpenAI API Key",
@@ -265,10 +287,20 @@ def main():
             help="Các câu hỏi mẫu để GraphRAG hiểu cách trả lời"
         )
         example_queries = [q.strip() for q in example_queries_input.split('\n') if q.strip()]
-        
-        # Initialize GraphRAG button
-        if st.button("🚀 Khởi tạo GraphRAG", type="primary"):
+
+        # Re-initialize GraphRAG button (for custom configuration)
+        if st.session_state.graphrag_handler.is_initialized:
+            st.info("ℹ️ GraphRAG đã được khởi tạo tự động. Bạn có thể cấu hình lại nếu muốn.")
+            button_label = "🔄 Re-initialize với cấu hình mới"
+            button_type = "secondary"
+        else:
+            st.warning("⚠️ Auto-initialization failed. Vui lòng thử khởi tạo thủ công.")
+            button_label = "🚀 Khởi tạo GraphRAG"
+            button_type = "primary"
+
+        if st.button(button_label, type=button_type):
             with st.spinner("Đang khởi tạo GraphRAG..."):
+                logger.info(f"Manual GraphRAG initialization requested")
                 success = st.session_state.graphrag_handler.initialize(
                     domain=domain,
                     entity_types=entity_types,
@@ -276,8 +308,10 @@ def main():
                 )
                 if success:
                     st.success("✅ GraphRAG đã được khởi tạo thành công!")
+                    logger.info("Manual GraphRAG initialization successful")
                 else:
                     st.error("❌ Lỗi khi khởi tạo GraphRAG")
+                    logger.error("Manual GraphRAG initialization failed")
     
     # Main content area
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
