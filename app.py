@@ -43,8 +43,10 @@ if 'graphrag_handler' not in st.session_state:
 
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = []
-if 'query_history' not in st.session_state:
-    st.session_state.query_history = []
+if 'chat_messages' not in st.session_state:
+    st.session_state.chat_messages = []
+if 'show_references' not in st.session_state:
+    st.session_state.show_references = True
 if 'is_processing' not in st.session_state:
     st.session_state.is_processing = False
 if 'estimation_workflow' not in st.session_state:
@@ -323,7 +325,19 @@ def main():
                 else:
                     st.error("❌ Lỗi khi khởi tạo GraphRAG")
                     logger.error("Manual GraphRAG initialization failed")
-    
+
+    # Chat controls in sidebar
+    st.sidebar.divider()
+    st.sidebar.subheader("💬 Chat Settings")
+    st.session_state.show_references = st.sidebar.checkbox(
+        "Hiển thị references",
+        value=st.session_state.show_references,
+        key="ref_toggle"
+    )
+    if st.sidebar.button("🗑️ Clear Chat", key="clear_chat"):
+        st.session_state.chat_messages = []
+        st.rerun()
+
     # Main content area
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
     
@@ -407,63 +421,75 @@ def main():
     
     with tab2:
         st.header("🔍 Truy vấn GraphRAG")
-        
+
         if not st.session_state.graphrag_handler.is_initialized:
             st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi truy vấn")
         else:
-            # Query input
-            query = st.text_input(
-                "Nhập câu hỏi của bạn:",
-                placeholder="Ví dụ: Tài liệu này nói về chủ đề gì?",
-                help="Nhập câu hỏi để tìm kiếm thông tin từ tài liệu đã xử lý"
-            )
-            
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                with_references = st.checkbox("Hiển thị references", value=True)
-            
-            with col2:
-                if st.button("🔍 Tìm kiếm", type="primary"):
-                    if query:
-                        with st.spinner("Đang tìm kiếm..."):
-                            result = st.session_state.graphrag_handler.query(
-                                query, 
-                                with_references=with_references
+            # Welcome message for empty chat
+            if not st.session_state.chat_messages:
+                st.info("👋 Xin chào! Hãy đặt câu hỏi về tài liệu đã upload.")
+
+            # Display chat history
+            for message in st.session_state.chat_messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+                    # Show references if available (for assistant messages)
+                    if message["role"] == "assistant" and message.get("references"):
+                        with st.expander("📚 Nguồn tham khảo"):
+                            references_html = GraphVisualization.create_references_display(
+                                message["references"]
                             )
-                            
-                            if result:
-                                # Add to query history
-                                st.session_state.query_history.append(result)
-                                
-                                # Display result
-                                st.subheader("💡 Kết quả")
-                                st.write(result['response'])
-                                
-                                # Display references if available
-                                if with_references and result.get('references'):
+                            st.markdown(references_html, unsafe_allow_html=True)
+
+            # Chat input
+            if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+                # Add user message to chat
+                st.session_state.chat_messages.append({
+                    "role": "user",
+                    "content": prompt,
+                    "timestamp": datetime.now().isoformat()
+                })
+
+                # Display user message immediately
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+
+                # Query GraphRAG and show assistant response
+                with st.chat_message("assistant"):
+                    with st.spinner("Đang tìm kiếm..."):
+                        result = st.session_state.graphrag_handler.query(
+                            prompt,
+                            with_references=st.session_state.show_references
+                        )
+
+                        if result:
+                            # Display response
+                            st.markdown(result['response'])
+
+                            # Add to chat history
+                            st.session_state.chat_messages.append({
+                                "role": "assistant",
+                                "content": result['response'],
+                                "references": result.get('references', []) if st.session_state.show_references else [],
+                                "timestamp": datetime.now().isoformat()
+                            })
+
+                            # Show references if available
+                            if st.session_state.show_references and result.get('references'):
+                                with st.expander("📚 Nguồn tham khảo"):
                                     references_html = GraphVisualization.create_references_display(
                                         result['references']
                                     )
                                     st.markdown(references_html, unsafe_allow_html=True)
-                            else:
-                                st.error("❌ Không thể thực hiện truy vấn")
-                    else:
-                        st.warning("⚠️ Vui lòng nhập câu hỏi")
-            
-            # Query history
-            if st.session_state.query_history:
-                st.subheader("📜 Lịch sử Truy vấn")
-                
-                # Create query history table
-                history_df = GraphVisualization.create_query_results_table(
-                    st.session_state.query_history
-                )
-                st.dataframe(history_df, use_container_width=True)
-                
-                # Clear history button
-                if st.button("🗑️ Xóa lịch sử"):
-                    st.session_state.query_history = []
-                    st.rerun()
+                        else:
+                            error_msg = "❌ Không thể thực hiện truy vấn"
+                            st.error(error_msg)
+                            st.session_state.chat_messages.append({
+                                "role": "assistant",
+                                "content": error_msg,
+                                "timestamp": datetime.now().isoformat()
+                            })
 
     with tab3:
         st.header("📋 Project Estimation")
@@ -703,7 +729,7 @@ def main():
             **Trạng thái:**
             - GraphRAG Initialized: {'✅' if st.session_state.graphrag_handler.is_initialized else '❌'}
             - Files Processed: {len(st.session_state.processed_files)}
-            - Queries Made: {len(st.session_state.query_history)}
+            - Messages: {len(st.session_state.chat_messages)}
             """)
 
 if __name__ == "__main__":
