@@ -435,6 +435,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     """
     Worker 2: Chuyên estimation effort cho các task
     Receives task_breakdown via Send() mechanism
+    Enhanced with few-shot prompting from historical data
     """
     # Extract task data from worker input
     task_breakdown = worker_input.get('task_breakdown', {})
@@ -443,6 +444,33 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     print(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
+
+    # NEW: Search for similar historical estimations for few-shot prompting
+    from utils.estimation_history_manager import get_history_manager
+
+    few_shot_context = ""
+    try:
+        history_manager = get_history_manager()
+
+        # Search for similar tasks
+        similar_tasks = history_manager.search_similar(
+            description=task_breakdown.get('description', ''),
+            category=task_breakdown.get('category'),
+            role=task_breakdown.get('role'),
+            top_k=5,
+            similarity_threshold=0.6
+        )
+
+        if similar_tasks:
+            print(f"   📚 Found {len(similar_tasks)} similar historical tasks")
+            few_shot_context = history_manager.build_few_shot_prompt(similar_tasks, max_examples=5)
+        else:
+            print(f"   ℹ️ No similar historical tasks found")
+            few_shot_context = "No similar historical tasks found. Please estimate based on your expertise."
+
+    except Exception as e:
+        print(f"   ⚠️ Could not retrieve historical data: {e}")
+        few_shot_context = "Historical data unavailable. Please estimate based on your expertise."
 
     messages = [
         SystemMessage(content=llm_handler.get_estimation_worker_prompt()),
@@ -460,7 +488,10 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         QUAN TRỌNG: Task này có role="{task_breakdown.get('role', 'Backend')}"
         Chỉ estimate cho role này, các role khác để 0.
 
+        {few_shot_context}
+
         Hãy estimate effort cho middle developer (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
+        Sử dụng các historical examples bên trên làm tham khảo để có estimation chính xác hơn.
         """)
     ]
 
@@ -514,6 +545,16 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             })
 
             print(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
+
+            # NEW: Save successful estimation to history for future reference
+            try:
+                history_manager.save_estimation(
+                    estimated_task,
+                    project_name="current_estimation"
+                )
+                print(f"   💾 Saved to estimation history")
+            except Exception as e:
+                print(f"   ⚠️ Could not save to history: {e}")
 
             return {
                 'estimation_results': [estimated_task]

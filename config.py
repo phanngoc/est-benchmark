@@ -40,6 +40,17 @@ class Config:
     MAX_NODES_DISPLAY = 100
     
 
+    # Estimation History Configuration
+    ESTIMATION_HISTORY_DB_PATH = "./estimation_history_db"
+    ESTIMATION_HISTORY_COLLECTION = "estimation_history"
+    EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI embedding model
+    EMBEDDING_CACHE_DIR = "./embedding_cache"
+    
+    # Few-Shot Prompting Configuration
+    ENABLE_FEW_SHOT_PROMPTING = True  # Enable/disable historical data usage
+    FEW_SHOT_SIMILARITY_THRESHOLD = 0.6  # Minimum similarity score (0-1)
+    FEW_SHOT_MAX_EXAMPLES = 5  # Maximum number of historical examples
+
     @classmethod
     def validate_config(cls):
         """Validate configuration settings"""
