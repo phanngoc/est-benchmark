@@ -339,7 +339,7 @@ def main():
         st.rerun()
 
     # Main content area
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
+    tab1, tab2, tab3 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
@@ -642,95 +642,6 @@ def main():
                     if st.button("🗑️ Clear Results", type="secondary"):
                         st.session_state.project_estimation_result = None
                         st.rerun()
-
-    with tab4:
-        st.header("📊 Visualization")
-        
-        if not st.session_state.graphrag_handler.is_initialized:
-            st.warning("⚠️ Vui lòng khởi tạo GraphRAG và thêm tài liệu trước khi xem visualization")
-        else:
-            # Get graph info
-            graph_info = st.session_state.graphrag_handler.get_graph_info()
-            
-            if graph_info:
-                st.subheader("📈 Thống kê Graph")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Trạng thái", "✅ Đã khởi tạo" if graph_info.get('is_initialized') else "❌ Chưa khởi tạo")
-                with col2:
-                    st.metric("Working Directory", graph_info.get('working_dir', 'N/A'))
-                with col3:
-                    st.metric("Cập nhật cuối", graph_info.get('timestamp', 'N/A')[:19] if graph_info.get('timestamp') else 'N/A')
-                
-                # File processing stats
-                if st.session_state.processed_files:
-                    file_types = {}
-                    for f in st.session_state.processed_files:
-                        file_type = f['type']
-                        file_types[file_type] = file_types.get(file_type, 0) + 1
-                    
-                    stats = {'file_types': file_types}
-                    fig = GraphVisualization.create_processing_stats(stats)
-                    if fig.data:
-                        st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("ℹ️ Chưa có dữ liệu để hiển thị")
-    
-    with tab5:
-        st.header("ℹ️ Thông tin Ứng dụng")
-        
-        st.markdown("""
-        ### 🧠 Fast GraphRAG Document Analyzer
-        
-        Ứng dụng này sử dụng **Fast GraphRAG** để phân tích và truy vấn tài liệu một cách thông minh.
-        
-        #### ✨ Tính năng chính:
-        - 📁 **Upload đa dạng loại file**: TXT, PDF, DOCX, MD
-        - 🧠 **Phân tích thông minh**: Sử dụng GraphRAG để tạo knowledge graph
-        - 🔍 **Truy vấn tự nhiên**: Hỏi đáp bằng tiếng Việt
-        - 📊 **Visualization**: Hiển thị mối quan hệ giữa các thực thể
-        - 📜 **Lịch sử truy vấn**: Lưu trữ và quản lý các câu hỏi đã hỏi
-        
-        #### 🚀 Cách sử dụng:
-        1. **Cấu hình**: Nhập OpenAI API key và thiết lập domain
-        2. **Upload**: Chọn và upload các file tài liệu
-        3. **Xử lý**: Thêm tài liệu vào GraphRAG
-        4. **Truy vấn**: Đặt câu hỏi và nhận câu trả lời thông minh
-        5. **Visualization**: Xem biểu đồ và thống kê
-        
-        #### 🔧 Cấu hình:
-        - **Domain**: Mô tả lĩnh vực và mục tiêu phân tích
-        - **Entity Types**: Các loại thực thể cần nhận diện
-        - **Example Queries**: Câu hỏi mẫu để hướng dẫn AI
-        
-        #### 📚 Dependencies:
-        - Fast GraphRAG: Framework chính
-        - OpenAI: Language model
-        - Streamlit: Web interface
-        - Plotly: Visualization
-        - NetworkX: Graph processing
-        """)
-        
-        # System info
-        st.subheader("🔧 Thông tin Hệ thống")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"""
-            **Cấu hình:**
-            - Working Directory: `{Config.WORKING_DIR}`
-            - Max File Size: {Config.MAX_FILE_SIZE / (1024*1024):.0f}MB
-            - Supported Extensions: {', '.join(Config.ALLOWED_EXTENSIONS)}
-            """)
-        
-        with col2:
-            st.markdown(f"""
-            **Trạng thái:**
-            - GraphRAG Initialized: {'✅' if st.session_state.graphrag_handler.is_initialized else '❌'}
-            - Files Processed: {len(st.session_state.processed_files)}
-            - Messages: {len(st.session_state.chat_messages)}
-            """)
 
 if __name__ == "__main__":
     main()

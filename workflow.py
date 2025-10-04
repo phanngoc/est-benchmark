@@ -549,18 +549,32 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     try:
         history_manager = get_history_manager()
 
+        # Create search query from task data
+        search_description = task_breakdown.get('description', '')
+        search_category = task_breakdown.get('category')
+        search_role = task_breakdown.get('role')
+        
+        logger.debug(f"   🔍 Searching historical data with:")
+        logger.debug(f"     - Description: {search_description[:100]}...")
+        logger.debug(f"     - Category: {search_category}")
+        logger.debug(f"     - Role: {search_role}")
+
         # Search for similar tasks
         similar_tasks = history_manager.search_similar(
-            description=task_breakdown.get('description', ''),
-            category=task_breakdown.get('category'),
-            role=task_breakdown.get('role'),
+            description=search_description,
+            category=search_category,
+            role=search_role,
             top_k=5,
             similarity_threshold=0.6
         )
 
         if similar_tasks:
-            logger.debug(f"   📚 Found {len(similar_tasks)} similar historical tasks")
+            logger.info(f"   📚 Found {len(similar_tasks)} similar historical tasks")
             few_shot_context = history_manager.build_few_shot_prompt(similar_tasks, max_examples=5)
+            
+            # Log the few-shot context for debugging
+            logger.debug(f"   📝 Few-shot context generated ({len(few_shot_context)} chars):")
+            logger.debug(f"   {few_shot_context[:500]}..." if len(few_shot_context) > 500 else f"   {few_shot_context}")
         else:
             logger.debug(f"   ℹ️ No similar historical tasks found")
             few_shot_context = "No similar historical tasks found. Please estimate based on your expertise."
@@ -568,6 +582,13 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"   ⚠️ Could not retrieve historical data: {e}")
         few_shot_context = "Historical data unavailable. Please estimate based on your expertise."
+    
+    # Log the final few-shot context that will be sent to LLM
+    logger.debug(f"   🎯 Final few-shot context to be used:")
+    if len(few_shot_context) > 200:
+        logger.debug(f"   {few_shot_context[:200]}... (truncated, total: {len(few_shot_context)} chars)")
+    else:
+        logger.debug(f"   {few_shot_context}")
 
     messages = [
         SystemMessage(content=llm_handler.get_estimation_worker_prompt()),

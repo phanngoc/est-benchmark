@@ -50,9 +50,7 @@ class Config:
     # Estimation History Configuration
     ESTIMATION_HISTORY_DB_PATH = "./estimation_history_db"
     ESTIMATION_HISTORY_COLLECTION = "estimation_history"
-    EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI embedding model
-    EMBEDDING_CACHE_DIR = "./embedding_cache"
-    
+
     # Few-Shot Prompting Configuration
     ENABLE_FEW_SHOT_PROMPTING = True  # Enable/disable historical data usage
     FEW_SHOT_SIMILARITY_THRESHOLD = 0.6  # Minimum similarity score (0-1)

@@ -56,30 +56,6 @@ class SunAsteriskExcelExporter:
         "Note"                          # 20
     ]
 
-    # Column widths
-    COLUMN_WIDTHS = {
-        "No": 5,
-        "カテゴリ": 12,
-        "Sub.No": 8,
-        "画面・機能 Screen・Feature": 28,
-        "参照資料 Reference Document": 28,
-        "Task": 16,
-        "Premise": 16,
-        "Task(JP)": 22,
-        "想定／前提": 18,
-        "備考 Remark": 22,
-        "Backend - Implement": 12,
-        "Backend - FixBug": 12,
-        "Backend - Unit Test": 12,
-        "Frontend - Implement": 12,
-        "Frontend - FixBug": 12,
-        "Frontend - Unit Test": 12,
-        "Responsive - Implement": 12,
-        "QA - Implement": 12,
-        "Total (MD)": 12,
-        "Note": 20
-    }
-
     # Effort column indices (1-based for Excel)
     EFFORT_COLUMNS = [11, 12, 13, 14, 15, 16, 17, 18]  # Backend-Implement through QA-Implement
     TOTAL_COLUMN = 19  # Total (MD)
@@ -213,12 +189,15 @@ class SunAsteriskExcelExporter:
         for idx, col_name in enumerate(self.COLUMNS, start=1):
             cell = ws.cell(row=6, column=idx)
             cell.value = col_name
-            cell.font = Font(bold=True)
+            cell.font = Font(bold=True, color="FFFFFF")  # White text for contrast
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+            cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")  # Professional blue
 
-            # Set column width
-            ws.column_dimensions[get_column_letter(idx)].width = self.COLUMN_WIDTHS.get(col_name, 12)
+            # Auto-calculate column width based on header text length
+            # Formula: (character_count * 1.2) + 2 (padding), minimum width = 10
+            char_count = len(col_name)
+            calculated_width = max(char_count * 1.2 + 2, 10)
+            ws.column_dimensions[get_column_letter(idx)].width = calculated_width
 
     def _build_data_table(self, ws, data: List[Dict[str, Any]]):
         """Build data table with task rows."""
