@@ -11,6 +11,11 @@ from utils.file_processor import FileProcessor
 from utils.graphrag_handler import GraphRAGHandler
 from utils.visualization import GraphVisualization
 from workflow import EnhancedEstimationWorkflow
+from utils.logger import init_logging, get_logger
+
+# Initialize logging system
+init_logging(log_dir=Config.LOG_DIR, log_level=Config.LOG_LEVEL)
+logger = get_logger(__name__)
 
 # Page configuration
 st.set_page_config(
@@ -40,7 +45,9 @@ def auto_analyze_project_scope(graphrag_handler) -> str:
     """
     Auto-generate comprehensive project description từ uploaded documents
     """
+    logger.info("Starting auto_analyze_project_scope")
     if not graphrag_handler or not graphrag_handler.is_initialized:
+        logger.warning("GraphRAG handler not initialized for project scope analysis")
         return ""
 
     # Multiple queries to understand project scope comprehensively
@@ -59,13 +66,17 @@ def auto_analyze_project_scope(graphrag_handler) -> str:
             result = graphrag_handler.query(query, with_references=False)
             if result and result.get('response'):
                 project_insights.append(result['response'])
+                logger.debug(f"Project query successful: {query[:50]}...")
         except Exception as e:
             st.warning(f"Could not analyze: {query[:50]}... - {str(e)}")
+            logger.error(f"Project query failed: {query[:50]}... - {str(e)}")
             continue
 
     if not project_insights:
+        logger.warning("No project insights gathered from documents")
         return ""
 
+    logger.info(f"Successfully gathered {len(project_insights)} project insights")
     # Combine insights into comprehensive project description
     combined_description = f"""
 Phát triển dự án với các yêu cầu sau được trích xuất từ tài liệu:
@@ -81,16 +92,20 @@ def run_project_estimation():
     """
     Main function để chạy project estimation với Streamlit integration
     """
+    logger.info("Starting run_project_estimation")
     if st.session_state.estimation_in_progress:
         st.warning("🔄 Estimation đang chạy. Vui lòng đợi...")
+        logger.warning("Estimation already in progress")
         return
 
     if not st.session_state.graphrag_handler.is_initialized:
         st.error("❌ GraphRAG chưa được khởi tạo. Vui lòng khởi tạo GraphRAG trước.")
+        logger.error("Estimation attempted without GraphRAG initialization")
         return
 
     if not st.session_state.processed_files:
         st.error("❌ Chưa có tài liệu nào được xử lý. Vui lòng upload và xử lý tài liệu trước.")
+        logger.error("Estimation attempted without processed files")
         return
 
     try:
@@ -107,6 +122,7 @@ def run_project_estimation():
 
         if not project_description:
             st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
+            logger.error("Failed to analyze project from documents")
             return
 
         # Display analyzed project description
@@ -149,6 +165,7 @@ def run_project_estimation():
         status_text.text("🚀 Đang chạy estimation workflow...")
         progress_bar.progress(50)
 
+        logger.info("Running estimation workflow with project description and GraphRAG insights")
         result = st.session_state.estimation_workflow.run_estimation(
             project_description,
             graphrag_insights=graphrag_insights
@@ -160,6 +177,7 @@ def run_project_estimation():
 
             st.session_state.project_estimation_result = result
             st.success("🎉 Project estimation đã hoàn thành thành công!")
+            logger.info(f"Estimation completed successfully: {result.get('total_effort', 0):.1f} mandays")
 
             # Display summary
             total_effort = result.get('total_effort', 0)
@@ -176,15 +194,21 @@ def run_project_estimation():
 
         else:
             st.error("❌ Estimation workflow failed. Vui lòng thử lại.")
+            logger.error(f"Estimation workflow failed with status: {result.get('workflow_status', 'unknown')}")
 
     except Exception as e:
         st.error(f"❌ Lỗi khi chạy estimation: {str(e)}")
+        logger.exception(f"Exception during estimation: {str(e)}")
     finally:
         st.session_state.estimation_in_progress = False
+        logger.info("Estimation process completed")
 
 def main():
     """Main application function"""
-    
+    logger.info("="*60)
+    logger.info("Fast GraphRAG Document Analyzer - Application Started")
+    logger.info("="*60)
+
     # Header
     st.title("🧠 " + Config.APP_TITLE)
     st.markdown(f"**{Config.APP_DESCRIPTION}**")

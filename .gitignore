@@ -33,6 +33,8 @@ graphrag_workspace/
 
 # Log files
 *.log
+logs/*.log
+logs/*.log.*
 
 # MacOS
 .DS_Store

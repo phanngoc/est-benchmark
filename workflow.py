@@ -28,6 +28,13 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langgraph.checkpoint.memory import MemorySaver
 
+# Import logging
+from utils.logger import get_logger
+from config import Config
+
+# Initialize logger
+logger = get_logger(__name__)
+
 # ========================
 # Enhanced Data Models
 # ========================
@@ -304,16 +311,16 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
     """
     Enhanced Orchestrator với GraphRAG integration
     """
-    print(f"🎯 Enhanced Orchestrator đang phân tích task: {state['original_task']}")
+    logger.info(f"🎯 Enhanced Orchestrator đang phân tích task: {state['original_task']}")
 
     llm_handler = EnhancedEstimationLLM()
 
     # Sử dụng pre-fetched GraphRAG insights từ state
     graphrag_insights = state.get('graphrag_insights', [])
     if graphrag_insights:
-        print(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
+        logger.info(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
     else:
-        print("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
+        logger.warning("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
 
     # Tạo context từ GraphRAG insights
     graphrag_context = ""
@@ -346,8 +353,8 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
 
             categories = result.get('categories', [])
 
-            print(f"✅ Orchestrator đã phân tích: {len(categories)} categories")
-            print(f"📈 Complexity: {result.get('complexity_assessment', 'Unknown')}")
+            logger.info(f"✅ Orchestrator đã phân tích: {len(categories)} categories")
+            logger.info(f"📈 Complexity: {result.get('complexity_assessment', 'Unknown')}")
 
             return {
                 'main_categories': categories,
@@ -358,7 +365,7 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
             raise ValueError("Không thể parse JSON response từ Orchestrator")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Enhanced Orchestrator: {e}")
+        logger.error(f"❌ Lỗi trong Enhanced Orchestrator: {e}")
         return {
             'main_categories': [],
             'graphrag_insights': graphrag_insights,
@@ -378,7 +385,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
     category_focus = worker_input.get('category_focus', 'General')
     original_task = worker_input.get('original_task', '')
 
-    print(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
+    logger.info(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -413,7 +420,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
                 task['worker_source'] = 'task_breakdown_worker'
                 task['confidence_level'] = 0.8  # Default confidence từ breakdown
 
-            print(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
+            logger.info(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
 
             return {
                 'breakdown_results': breakdown_tasks
@@ -422,7 +429,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Breakdown Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Task Breakdown Worker: {e}")
+        logger.error(f"❌ Lỗi trong Task Breakdown Worker: {e}")
         return {
             'breakdown_results': []
         }
@@ -441,7 +448,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     task_breakdown = worker_input.get('task_breakdown', {})
     task_name = task_breakdown.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
+    logger.info(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -462,14 +469,14 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         )
 
         if similar_tasks:
-            print(f"   📚 Found {len(similar_tasks)} similar historical tasks")
+            logger.debug(f"   📚 Found {len(similar_tasks)} similar historical tasks")
             few_shot_context = history_manager.build_few_shot_prompt(similar_tasks, max_examples=5)
         else:
-            print(f"   ℹ️ No similar historical tasks found")
+            logger.debug(f"   ℹ️ No similar historical tasks found")
             few_shot_context = "No similar historical tasks found. Please estimate based on your expertise."
 
     except Exception as e:
-        print(f"   ⚠️ Could not retrieve historical data: {e}")
+        logger.warning(f"   ⚠️ Could not retrieve historical data: {e}")
         few_shot_context = "Historical data unavailable. Please estimate based on your expertise."
 
     messages = [
@@ -544,7 +551,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'estimation_worker'
             })
 
-            print(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
+            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
 
             # NEW: Save successful estimation to history for future reference
             try:
@@ -552,9 +559,9 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                     estimated_task,
                     project_name="current_estimation"
                 )
-                print(f"   💾 Saved to estimation history")
+                logger.debug(f"   💾 Saved to estimation history")
             except Exception as e:
-                print(f"   ⚠️ Could not save to history: {e}")
+                logger.warning(f"   ⚠️ Could not save to history: {e}")
 
             return {
                 'estimation_results': [estimated_task]
@@ -563,7 +570,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Estimation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Estimation Worker: {e}")
+        logger.error(f"❌ Lỗi trong Estimation Worker: {e}")
         # Return task với default estimation
         fallback_task = task_breakdown.copy() if task_breakdown else {}
         task_role = fallback_task.get('role', 'Backend')
@@ -601,7 +608,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
     estimation_task = worker_input.get('estimation_task', {})
     task_name = estimation_task.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
+    logger.info(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -665,7 +672,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'validation_worker'
             })
 
-            print(f"✅ Worker 3 validated: {original_estimation:.1f} → {validated_estimation:.1f} mandays")
+            logger.info(f"✅ Worker 3 validated: {original_estimation:.1f} → {validated_estimation:.1f} mandays")
 
             return {
                 'validated_results': [validated_task]
@@ -674,7 +681,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Validation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Validation Worker: {e}")
+        logger.error(f"❌ Lỗi trong Validation Worker: {e}")
         # Return task với minimal validation
         fallback_task = estimation_task.copy() if estimation_task else {}
         fallback_task.update({
@@ -694,7 +701,7 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công breakdown workers cho mỗi category
     """
     categories = state.get('main_categories', [])
-    print(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
+    logger.info(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
 
     sends = []
     for category in categories:
@@ -714,7 +721,7 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công estimation workers cho mỗi breakdown task
     """
     breakdown_results = state.get('breakdown_results', [])
-    print(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
+    logger.info(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
 
     sends = []
     for task_breakdown in breakdown_results:
@@ -733,7 +740,7 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công validation workers cho mỗi estimation task
     """
     estimation_results = state.get('estimation_results', [])
-    print(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
+    logger.info(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
 
     sends = []
     for estimation_task in estimation_results:
@@ -755,12 +762,12 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
     """
     Enhanced Synthesizer với advanced features
     """
-    print("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
+    logger.info("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
 
     validated_results = state.get('validated_results', [])
 
     if not validated_results:
-        print("⚠️ Không có validated results từ workers")
+        logger.warning("⚠️ Không có validated results từ workers")
         return {
             'final_estimation_data': [],
             'total_effort': 0.0,
@@ -841,11 +848,11 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
     # Tạo enhanced mermaid diagram
     mermaid_diagram = create_enhanced_mermaid_diagram(validated_results, validation_summary)
 
-    print(f"✅ Enhanced Synthesizer hoàn thành:")
-    print(f"   - {len(validated_results)} tasks")
-    print(f"   - {total_effort:.1f} mandays total")
-    print(f"   - {total_confidence:.2f} average confidence")
-    print(f"   - {adjusted_tasks} tasks adjusted")
+    logger.info(f"✅ Enhanced Synthesizer hoàn thành:")
+    logger.info(f"   - {len(validated_results)} tasks")
+    logger.info(f"   - {total_effort:.1f} mandays total")
+    logger.info(f"   - {total_confidence:.2f} average confidence")
+    logger.info(f"   - {adjusted_tasks} tasks adjusted")
 
     return {
         'final_estimation_data': validated_results,
@@ -1059,11 +1066,11 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
                 complexity_df = pd.DataFrame(complexity_data)
                 complexity_df.to_excel(writer, sheet_name='Complexity Distribution', index=False)
 
-        print(f"✅ Enhanced Excel export completed: {filepath}")
+        logger.info(f"✅ Enhanced Excel export completed: {filepath}")
         return filepath
 
     except Exception as e:
-        print(f"❌ Lỗi khi export Enhanced Excel: {e}")
+        logger.error(f"❌ Lỗi khi export Enhanced Excel: {e}")
         return ""
 
 # ========================
@@ -1124,13 +1131,13 @@ class EnhancedEstimationWorkflow:
         # Compile workflow
         self.workflow = builder.compile(checkpointer=self.memory)
 
-        print("✅ Enhanced Estimation Workflow đã được build thành công!")
+        logger.info("✅ Enhanced Estimation Workflow đã được build thành công!")
 
     def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
         """
         Chạy enhanced estimation workflow
         """
-        print(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
+        logger.info(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
 
         initial_state = {
             "original_task": task_description,
@@ -1152,12 +1159,12 @@ class EnhancedEstimationWorkflow:
             config = {"configurable": {"thread_id": thread_id}}
             result = self.workflow.invoke(initial_state, config=config)
 
-            print(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
+            logger.info(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
 
             return result
 
         except Exception as e:
-            print(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
+            logger.error(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
             return {
                 "workflow_status": "failed",
                 "error": str(e)
@@ -1169,7 +1176,7 @@ class EnhancedEstimationWorkflow:
         """
         estimation_data = result.get('final_estimation_data', [])
         if not estimation_data:
-            print("⚠️ Không có dữ liệu để export")
+            logger.warning("⚠️ Không có dữ liệu để export")
             return ""
 
         df = pd.DataFrame(estimation_data)
@@ -1204,11 +1211,11 @@ class EnhancedEstimationWorkflow:
             with open(filename, 'wb') as f:
                 f.write(mermaid_png)
 
-            print(f"✅ Đã tạo enhanced workflow diagram: {filename}")
+            logger.info(f"✅ Đã tạo enhanced workflow diagram: {filename}")
             return filename
 
         except Exception as e:
-            print(f"❌ Lỗi khi tạo enhanced workflow diagram: {e}")
+            logger.error(f"❌ Lỗi khi tạo enhanced workflow diagram: {e}")
             return ""
 
 # ========================
@@ -1244,14 +1251,14 @@ if __name__ == "__main__":
         mermaid_diagram = enhanced_workflow.get_mermaid_diagram(result)
         validation_summary = enhanced_workflow.get_validation_summary(result)
 
-        print(f"\n📊 Enhanced Estimation Results:")
-        print(f"- Total effort: {result.get('total_effort', 0):.1f} mandays")
-        print(f"- Average confidence: {result.get('total_confidence', 0):.2f}")
-        print(f"- Tasks processed: {len(result.get('final_estimation_data', []))}")
-        print(f"- Excel file: {excel_file}")
-        print(f"- Tasks adjusted: {validation_summary.get('adjustment_summary', {}).get('tasks_adjusted', 0)}")
+        logger.info(f"\n📊 Enhanced Estimation Results:")
+        logger.info(f"- Total effort: {result.get('total_effort', 0):.1f} mandays")
+        logger.info(f"- Average confidence: {result.get('total_confidence', 0):.2f}")
+        logger.info(f"- Tasks processed: {len(result.get('final_estimation_data', []))}")
+        logger.info(f"- Excel file: {excel_file}")
+        logger.info(f"- Tasks adjusted: {validation_summary.get('adjustment_summary', {}).get('tasks_adjusted', 0)}")
 
-        print(f"\n🎨 Enhanced Mermaid Diagram:\n{mermaid_diagram}")
+        logger.info(f"\n🎨 Enhanced Mermaid Diagram:\n{mermaid_diagram}")
 
     # Tạo workflow visualization
     workflow_diagram = enhanced_workflow.visualize_workflow()

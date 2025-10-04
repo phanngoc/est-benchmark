@@ -6,11 +6,18 @@ load_dotenv()
 
 class Config:
     """Configuration class for the Fast GraphRAG Streamlit app"""
-    
+
     # OpenAI API Configuration
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     CONCURRENT_TASK_LIMIT = int(os.getenv("CONCURRENT_TASK_LIMIT", "8"))
+
+    # Logging Configuration
+    LOG_DIR = os.getenv("LOG_DIR", "./logs")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB per log file
+    LOG_BACKUP_COUNT = 30  # Keep 30 backup files
+    LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] - %(message)s"
     
     # App Configuration
     APP_TITLE = "Fast GraphRAG Document Analyzer"
