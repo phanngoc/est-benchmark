@@ -41,3 +41,5 @@ logs/*.log.*
 
 # Windows
 Thumbs.db
+embedding_cache/
+estimation_history_db/

@@ -24,15 +24,18 @@ class AppLogger:
 
     @classmethod
     def setup_logging(cls, log_dir="./logs", log_level="INFO",
-                     max_bytes=10*1024*1024, backup_count=30):
+                     console_level=None, max_bytes=10*1024*1024, backup_count=30,
+                     debug_mode=False):
         """
-        Setup logging configuration with file rotation
+        Setup logging configuration with file rotation and flexible console output
 
         Args:
             log_dir: Directory for log files
-            log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            log_level: Logging level for file output (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            console_level: Logging level for console output (if None, uses log_level for debug_mode=True, WARNING otherwise)
             max_bytes: Maximum size of log file before rotation (default 10MB)
             backup_count: Number of backup files to keep (default 30)
+            debug_mode: If True, shows all logs in console at log_level, otherwise only WARNING+
         """
         if cls._initialized:
             # Already initialized, just log a debug message
@@ -46,12 +49,20 @@ class AppLogger:
         log_filename = f"app_{datetime.now().strftime('%Y%m%d')}.log"
         log_filepath = os.path.join(log_dir, log_filename)
 
-        # Log format
-        log_format = "[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] - %(message)s"
-        date_format = "%Y-%m-%d %H:%M:%S"
-
-        # Create formatter
-        formatter = logging.Formatter(log_format, datefmt=date_format)
+        # Determine console log level
+        if console_level is None:
+            console_level = log_level if debug_mode else "WARNING"
+            
+        # File log format (detailed)
+        file_format = "[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] - %(message)s"
+        file_date_format = "%Y-%m-%d %H:%M:%S"
+        
+        # Console log format (cleaner for debugging)
+        console_format = "[%(levelname)s] %(name)s: %(message)s" if debug_mode else "[%(levelname)s] %(message)s"
+        
+        # Create formatters
+        file_formatter = logging.Formatter(file_format, datefmt=file_date_format)
+        console_formatter = logging.Formatter(console_format)
 
         # File handler with rotation
         file_handler = RotatingFileHandler(
@@ -60,13 +71,13 @@ class AppLogger:
             backupCount=backup_count,
             encoding='utf-8'
         )
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         file_handler.setLevel(getattr(logging, log_level))
 
-        # Console handler (for development)
+        # Console handler with flexible logging
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.WARNING)  # Only warnings and errors to console
+        console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(getattr(logging, console_level))
 
         # Configure root logger
         root_logger = logging.getLogger()
@@ -84,7 +95,9 @@ class AppLogger:
         root_logger.info("=" * 60)
         root_logger.info("Logging system initialized")
         root_logger.info(f"Log file: {log_filepath}")
-        root_logger.info(f"Log level: {log_level}")
+        root_logger.info(f"File log level: {log_level}")
+        root_logger.info(f"Console log level: {console_level}")
+        root_logger.info(f"Debug mode: {debug_mode}")
         root_logger.info("=" * 60)
 
     @classmethod
@@ -124,7 +137,41 @@ def get_logger(name):
     return AppLogger.get_logger(name)
 
 
-# Initialize logging on import (with defaults, can be reconfigured later)
-def init_logging(log_dir="./logs", log_level="INFO"):
+# Convenience functions for different logging modes
+def init_logging(log_dir="./logs", log_level="INFO", console_level=None, debug_mode=False):
     """Initialize logging with custom configuration"""
-    AppLogger.setup_logging(log_dir=log_dir, log_level=log_level)
+    AppLogger.setup_logging(
+        log_dir=log_dir, 
+        log_level=log_level, 
+        console_level=console_level,
+        debug_mode=debug_mode
+    )
+
+
+def init_debug_logging(log_dir="./logs", log_level="DEBUG"):
+    """Initialize logging in debug mode - shows all logs in console"""
+    AppLogger.setup_logging(
+        log_dir=log_dir, 
+        log_level=log_level, 
+        debug_mode=True
+    )
+
+
+def init_production_logging(log_dir="./logs", log_level="INFO"):
+    """Initialize logging in production mode - only warnings/errors in console"""
+    AppLogger.setup_logging(
+        log_dir=log_dir, 
+        log_level=log_level, 
+        console_level="WARNING",
+        debug_mode=False
+    )
+
+
+def init_silent_logging(log_dir="./logs", log_level="INFO"):
+    """Initialize logging with no console output - file only"""
+    AppLogger.setup_logging(
+        log_dir=log_dir, 
+        log_level=log_level, 
+        console_level="CRITICAL",  # Effectively silent
+        debug_mode=False
+    )

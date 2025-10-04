@@ -216,6 +216,17 @@ def run_project_estimation():
         st.session_state.estimation_in_progress = False
         logger.info("Estimation process completed")
 
+def get_formatted_file_size(file_info: Dict[str, Any]) -> str:
+    """Get formatted file size with backward compatibility"""
+    if 'size_formatted' in file_info:
+        return file_info['size_formatted']
+    elif 'size_bytes' in file_info:
+        return FileProcessor.format_file_size(file_info['size_bytes'])
+    else:
+        # Old format with only size_mb
+        size_bytes = int(file_info['size_mb'] * 1024 * 1024)
+        return FileProcessor.format_file_size(size_bytes)
+
 def main():
     """Main application function"""
     logger.info("="*60)
@@ -340,7 +351,7 @@ def main():
                         # Show file info
                         st.subheader("📋 Thông tin Files")
                         for file_info in processed_files:
-                            with st.expander(f"📄 {file_info['name']} ({file_info['size_mb']:.1f}MB)"):
+                            with st.expander(f"📄 {file_info['name']} ({file_info['size_formatted']})"):
                                 preview = FileProcessor.get_file_preview(file_info['content'])
                                 st.text(preview)
         
@@ -349,17 +360,25 @@ def main():
             st.subheader("📚 Files đã xử lý")
             
             # File statistics
-            total_size = sum(f['size_mb'] for f in st.session_state.processed_files)
+            # Backward compatibility: calculate size_bytes from size_mb if not present
+            total_size_bytes = 0
+            for f in st.session_state.processed_files:
+                if 'size_bytes' in f:
+                    total_size_bytes += f['size_bytes']
+                else:
+                    # Convert from MB to bytes for old format
+                    total_size_bytes += int(f['size_mb'] * 1024 * 1024)
+
             file_types = {}
             for f in st.session_state.processed_files:
                 file_type = f['type']
                 file_types[file_type] = file_types.get(file_type, 0) + 1
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Tổng số files", len(st.session_state.processed_files))
             with col2:
-                st.metric("Tổng dung lượng", f"{total_size:.1f} MB")
+                st.metric("Tổng dung lượng", FileProcessor.format_file_size(total_size_bytes))
             with col3:
                 st.metric("Loại files", len(file_types))
             

@@ -11,13 +11,25 @@ logger = get_logger(__name__)
 
 class FileProcessor:
     """Class để xử lý các loại file khác nhau"""
-    
+
     SUPPORTED_EXTENSIONS = {
         '.txt': 'text/plain',
         '.pdf': 'application/pdf',
         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         '.md': 'text/markdown'
     }
+
+    @staticmethod
+    def format_file_size(size_bytes: int) -> str:
+        """Format file size with appropriate unit (Bytes, KB, MB)"""
+        if size_bytes < 1024:
+            return f"{size_bytes} Bytes"
+        elif size_bytes < 1024 * 1024:
+            size_kb = size_bytes / 1024
+            return f"{size_kb:.1f}KB"
+        else:
+            size_mb = size_bytes / (1024 * 1024)
+            return f"{size_mb:.1f}MB"
     
     @staticmethod
     def extract_text_from_file(file_content: bytes, filename: str) -> str:
@@ -111,13 +123,16 @@ class FileProcessor:
             text = FileProcessor.extract_text_from_file(file_content, uploaded_file.name)
 
             if text.strip():
+                file_size_bytes = len(file_content)
                 processed_files.append({
                     'name': uploaded_file.name,
                     'content': text,
                     'size_mb': validation['size_mb'],
+                    'size_bytes': file_size_bytes,
+                    'size_formatted': FileProcessor.format_file_size(file_size_bytes),
                     'type': os.path.splitext(uploaded_file.name)[1].lower()
                 })
-                logger.info(f"Successfully processed file: {uploaded_file.name} ({validation['size_mb']:.1f}MB)")
+                logger.info(f"Successfully processed file: {uploaded_file.name} ({FileProcessor.format_file_size(file_size_bytes)})")
             else:
                 st.warning(f"Không thể trích xuất text từ file: {uploaded_file.name}")
                 logger.warning(f"No text extracted from file: {uploaded_file.name}")
