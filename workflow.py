@@ -60,6 +60,27 @@ class TaskBreakdown:
     validation_notes: str = ""
     worker_source: str = ""  # Which worker created this
 
+    # Sun Asterisk-specific fields
+    sub_no: str = ""  # Sub.No (e.g., "1.1", "2.3")
+    feature: str = ""  # 画面・機能 Screen・Feature
+    reference: str = ""  # 参照資料 Reference Document
+    task_type: str = "Implement"  # Task type (Implement, FixBug, Unit Test, Analysis)
+    premise: str = ""  # Premise
+    task_jp: str = ""  # Task(JP) - Japanese description
+    assumption_jp: str = ""  # 想定／前提 - Japanese assumptions
+    remark: str = ""  # 備考 Remark
+    note: str = ""  # Note
+
+    # Detailed effort breakdown by task type per role
+    backend_implement: float = 0.0
+    backend_fixbug: float = 0.0
+    backend_unittest: float = 0.0
+    frontend_implement: float = 0.0
+    frontend_fixbug: float = 0.0
+    frontend_unittest: float = 0.0
+    responsive_implement: float = 0.0
+    qa_implement: float = 0.0
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -78,7 +99,56 @@ class TaskBreakdown:
             'priority': self.priority,
             'confidence_level': self.confidence_level,
             'validation_notes': self.validation_notes,
-            'worker_source': self.worker_source
+            'worker_source': self.worker_source,
+            # Sun Asterisk fields
+            'sub_no': self.sub_no,
+            'feature': self.feature,
+            'reference': self.reference,
+            'task_type': self.task_type,
+            'premise': self.premise,
+            'task_jp': self.task_jp,
+            'assumption_jp': self.assumption_jp,
+            'remark': self.remark,
+            'note': self.note,
+            'backend_implement': self.backend_implement,
+            'backend_fixbug': self.backend_fixbug,
+            'backend_unittest': self.backend_unittest,
+            'frontend_implement': self.frontend_implement,
+            'frontend_fixbug': self.frontend_fixbug,
+            'frontend_unittest': self.frontend_unittest,
+            'responsive_implement': self.responsive_implement,
+            'qa_implement': self.qa_implement
+        }
+
+    def to_sunasterisk_format(self) -> Dict[str, Any]:
+        """Convert to Sun Asterisk Excel format."""
+        return {
+            'category': self.category,
+            'sub_no': self.sub_no,
+            'feature': self.feature or self.sub_task,  # Fallback to sub_task
+            'reference': self.reference or self.description,  # Fallback to description
+            'task': self.task_type,
+            'premise': self.premise,
+            'task_jp': self.task_jp,
+            'assumption_jp': self.assumption_jp,
+            'remark': self.remark,
+            'backend': {
+                'implement': self.backend_implement,
+                'fixbug': self.backend_fixbug,
+                'unittest': self.backend_unittest
+            },
+            'frontend': {
+                'implement': self.frontend_implement,
+                'fixbug': self.frontend_fixbug,
+                'unittest': self.frontend_unittest
+            },
+            'responsive': {
+                'implement': self.responsive_implement
+            },
+            'qa': {
+                'implement': self.qa_implement
+            },
+            'note': self.note
         }
 
 @dataclass
@@ -176,6 +246,8 @@ class EnhancedEstimationLLM:
         3. Tạo description chi tiết cho mỗi task
         4. XÁC ĐỊNH ROLE CHO TỪNG TASK (Backend, Frontend, QA, Infra)
         5. Xác định dependencies và priority
+        6. Tạo sub_no (Sub.No) cho mỗi task theo pattern phân cấp (1.1, 1.2, 2.1, etc.)
+        7. Xác định feature/screen name và reference document
 
         Nguyên tắc breakdown:
         - Mỗi sub-task phải có scope rõ ràng và có thể estimate được
@@ -196,13 +268,18 @@ class EnhancedEstimationLLM:
                 {
                     "id": "unique_id",
                     "category": "category_name",
+                    "sub_no": "1.1",
                     "role": "Backend|Frontend|QA|Infra",
                     "parent_task": "Parent Task Name",
                     "sub_task": "Specific Sub Task",
+                    "feature": "Screen/Feature Name",
+                    "reference": "Reference document or spec URL",
                     "description": "Detailed description",
                     "complexity": "Low/Medium/High",
                     "dependencies": ["task_id_1", "task_id_2"],
                     "priority": "Low/Medium/High",
+                    "premise": "Assumptions or prerequisites",
+                    "remark": "Additional remarks",
                     "notes": "Additional technical notes"
                 }
             ]
@@ -237,11 +314,20 @@ class EnhancedEstimationLLM:
         - Dependencies: Nhiều dependencies (+20-30%)
         - Risk level: High risk (+30-50%)
 
-        QUAN TRỌNG - Role-specific Estimation:
+        QUAN TRỌNG - Role-specific Estimation with Task Type Breakdown:
         - Mỗi task đã được assign một role cụ thể (Backend, Frontend, QA, hoặc Infra)
-        - Bạn cần estimate effort cho role tương ứng
+        - Bạn cần break down effort theo TASK TYPE cho role tương ứng:
+          * Implement: Core development work
+          * FixBug: Bug fixing and issue resolution (typically 10-20% of implement)
+          * Unit Test: Unit testing effort (typically 20-30% of implement)
         - Các role khác sẽ có estimation = 0
-        - Ví dụ: Nếu task có role="Backend", thì chỉ estimation_backend_manday > 0, còn lại = 0
+        - Ví dụ: Nếu task có role="Backend" và estimate 2.5 mandays:
+          * backend_implement: 1.5 (core development)
+          * backend_fixbug: 0.5 (bug fixing)
+          * backend_unittest: 0.5 (unit testing)
+          * frontend_implement/fixbug/unittest: 0.0
+          * responsive_implement: 0.0
+          * qa_implement: 0.0
 
         Trả về kết quả dưới dạng JSON với format:
         {
@@ -249,15 +335,19 @@ class EnhancedEstimationLLM:
                 "id": "task_id",
                 "role": "Backend|Frontend|QA|Infra",
                 "estimation_manday": 2.5,
-                "estimation_backend_manday": 2.5,
-                "estimation_frontend_manday": 0.0,
-                "estimation_qa_manday": 0.0,
-                "estimation_infra_manday": 0.0,
+                "backend_implement": 1.5,
+                "backend_fixbug": 0.5,
+                "backend_unittest": 0.5,
+                "frontend_implement": 0.0,
+                "frontend_fixbug": 0.0,
+                "frontend_unittest": 0.0,
+                "responsive_implement": 0.0,
+                "qa_implement": 0.0,
                 "confidence_level": 0.8,
                 "breakdown": {
-                    "development": 2.0,
-                    "testing": 0.3,
-                    "documentation": 0.2
+                    "implement": 1.5,
+                    "fixbug": 0.5,
+                    "unittest": 0.5
                 },
                 "risk_factors": ["dependency on external API", "new technology"],
                 "assumptions": ["team has basic React knowledge", "APIs are well documented"]
@@ -514,29 +604,48 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
             # Merge với original task data
             estimated_task = task_breakdown.copy()
-            
-            # Extract role-specific estimations
-            estimation_backend = estimation_data.get('estimation_backend_manday', 0.0)
-            estimation_frontend = estimation_data.get('estimation_frontend_manday', 0.0)
-            estimation_qa = estimation_data.get('estimation_qa_manday', 0.0)
-            estimation_infra = estimation_data.get('estimation_infra_manday', 0.0)
-            
+
+            # Extract detailed task type breakdowns
+            backend_impl = estimation_data.get('backend_implement', 0.0)
+            backend_fix = estimation_data.get('backend_fixbug', 0.0)
+            backend_test = estimation_data.get('backend_unittest', 0.0)
+            frontend_impl = estimation_data.get('frontend_implement', 0.0)
+            frontend_fix = estimation_data.get('frontend_fixbug', 0.0)
+            frontend_test = estimation_data.get('frontend_unittest', 0.0)
+            responsive_impl = estimation_data.get('responsive_implement', 0.0)
+            qa_impl = estimation_data.get('qa_implement', 0.0)
+
+            # Calculate role totals
+            estimation_backend = backend_impl + backend_fix + backend_test
+            estimation_frontend = frontend_impl + frontend_fix + frontend_test
+            estimation_qa = qa_impl
+            estimation_infra = 0.0  # Infra not broken down by task type
+
             # Calculate total estimation
-            total_estimation = estimation_backend + estimation_frontend + estimation_qa + estimation_infra
-            
-            # If LLM didn't provide role-specific breakdown, use total and assign to appropriate role
+            total_estimation = estimation_backend + estimation_frontend + estimation_qa + estimation_infra + responsive_impl
+
+            # If LLM didn't provide detailed breakdown, use total and assign to appropriate role
             if total_estimation == 0.0:
                 total_estimation = estimation_data.get('estimation_manday', 1.0)
                 task_role = task_breakdown.get('role', 'Backend')
+
+                # Distribute effort: 60% implement, 20% fixbug, 20% unittest
                 if task_role == 'Backend':
+                    backend_impl = total_estimation * 0.6
+                    backend_fix = total_estimation * 0.2
+                    backend_test = total_estimation * 0.2
                     estimation_backend = total_estimation
                 elif task_role == 'Frontend':
+                    frontend_impl = total_estimation * 0.6
+                    frontend_fix = total_estimation * 0.2
+                    frontend_test = total_estimation * 0.2
                     estimation_frontend = total_estimation
                 elif task_role == 'QA':
+                    qa_impl = total_estimation
                     estimation_qa = total_estimation
                 elif task_role == 'Infra':
                     estimation_infra = total_estimation
-            
+
             estimated_task.update({
                 'estimation_manday': total_estimation,
                 'estimation_backend_manday': estimation_backend,
@@ -548,7 +657,16 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'estimation_breakdown': estimation_data.get('breakdown', {}),
                 'risk_factors': estimation_data.get('risk_factors', []),
                 'assumptions': estimation_data.get('assumptions', []),
-                'worker_source': 'estimation_worker'
+                'worker_source': 'estimation_worker',
+                # Sun Asterisk detailed breakdown
+                'backend_implement': backend_impl,
+                'backend_fixbug': backend_fix,
+                'backend_unittest': backend_test,
+                'frontend_implement': frontend_impl,
+                'frontend_fixbug': frontend_fix,
+                'frontend_unittest': frontend_test,
+                'responsive_implement': responsive_impl,
+                'qa_implement': qa_impl
             })
 
             logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
@@ -950,10 +1068,83 @@ graph TD
 # Enhanced Excel Export Function
 # ========================
 
-def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], filename: str = None) -> str:
+def export_enhanced_excel(
+    df: pd.DataFrame,
+    validation_summary: Dict[str, Any],
+    filename: str = None,
+    format: str = "enhanced",
+    no: str = "001",
+    version: str = "1.0",
+    issue_date: str = None,
+    md_per_mm: int = 20
+) -> str:
     """
-    Enhanced Excel export với detailed analysis
+    Enhanced Excel export với detailed analysis.
+
+    Args:
+        df: DataFrame with estimation data
+        validation_summary: Summary of validation results
+        filename: Output filename (auto-generated if None)
+        format: Export format - "enhanced" (default) or "sunasterisk"
+        no: Document number (for Sun Asterisk format)
+        version: Document version (for Sun Asterisk format)
+        issue_date: Issue date (for Sun Asterisk format)
+        md_per_mm: Man-days per man-month (for Sun Asterisk format)
+
+    Returns:
+        str: Path to exported Excel file
     """
+    # Handle Sun Asterisk format
+    if format == "sunasterisk":
+        from utils.sunasterisk_excel_exporter import export_sunasterisk_excel
+
+        # Convert DataFrame to Sun Asterisk format
+        data = []
+        for _, row in df.iterrows():
+            task_dict = row.to_dict()
+
+            # Convert to Sun Asterisk format
+            sunasterisk_task = {
+                'category': task_dict.get('category', ''),
+                'sub_no': task_dict.get('sub_no', ''),
+                'feature': task_dict.get('feature', '') or task_dict.get('sub_task', ''),
+                'reference': task_dict.get('reference', '') or task_dict.get('description', ''),
+                'task': task_dict.get('task_type', 'Implement'),
+                'premise': task_dict.get('premise', ''),
+                'task_jp': task_dict.get('task_jp', ''),
+                'assumption_jp': task_dict.get('assumption_jp', ''),
+                'remark': task_dict.get('remark', ''),
+                'backend': {
+                    'implement': task_dict.get('backend_implement', 0) or 0,
+                    'fixbug': task_dict.get('backend_fixbug', 0) or 0,
+                    'unittest': task_dict.get('backend_unittest', 0) or 0
+                },
+                'frontend': {
+                    'implement': task_dict.get('frontend_implement', 0) or 0,
+                    'fixbug': task_dict.get('frontend_fixbug', 0) or 0,
+                    'unittest': task_dict.get('frontend_unittest', 0) or 0
+                },
+                'responsive': {
+                    'implement': task_dict.get('responsive_implement', 0) or 0
+                },
+                'qa': {
+                    'implement': task_dict.get('qa_implement', 0) or 0
+                },
+                'note': task_dict.get('note', '')
+            }
+            data.append(sunasterisk_task)
+
+        # Export using Sun Asterisk exporter
+        return export_sunasterisk_excel(
+            data=data,
+            filename=filename,
+            no=no,
+            version=version,
+            issue_date=issue_date,
+            md_per_mm=md_per_mm
+        )
+
+    # Original enhanced format
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"enhanced_estimation_{timestamp}.xlsx"
@@ -1170,9 +1361,30 @@ class EnhancedEstimationWorkflow:
                 "error": str(e)
             }
 
-    def export_results(self, result: Dict[str, Any], filename: str = None) -> str:
+    def export_results(
+        self,
+        result: Dict[str, Any],
+        filename: str = None,
+        format: str = "enhanced",
+        no: str = "001",
+        version: str = "1.0",
+        issue_date: str = None,
+        md_per_mm: int = 20
+    ) -> str:
         """
-        Enhanced export kết quả ra Excel
+        Enhanced export kết quả ra Excel.
+
+        Args:
+            result: Workflow result dictionary
+            filename: Output filename (auto-generated if None)
+            format: Export format - "enhanced" (default) or "sunasterisk"
+            no: Document number (for Sun Asterisk format)
+            version: Document version (for Sun Asterisk format)
+            issue_date: Issue date (for Sun Asterisk format)
+            md_per_mm: Man-days per man-month (for Sun Asterisk format)
+
+        Returns:
+            str: Path to exported Excel file
         """
         estimation_data = result.get('final_estimation_data', [])
         if not estimation_data:
@@ -1181,7 +1393,16 @@ class EnhancedEstimationWorkflow:
 
         df = pd.DataFrame(estimation_data)
         validation_summary = result.get('validation_summary', {})
-        return export_enhanced_excel(df, validation_summary, filename)
+        return export_enhanced_excel(
+            df=df,
+            validation_summary=validation_summary,
+            filename=filename,
+            format=format,
+            no=no,
+            version=version,
+            issue_date=issue_date,
+            md_per_mm=md_per_mm
+        )
 
     def get_mermaid_diagram(self, result: Dict[str, Any]) -> str:
         """
