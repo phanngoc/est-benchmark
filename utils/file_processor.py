@@ -105,10 +105,15 @@ class FileProcessor:
         return result
     
     @staticmethod
-    def process_uploaded_files(uploaded_files: List) -> List[Dict[str, Any]]:
-        """Xử lý danh sách file đã upload"""
+    def process_uploaded_files(uploaded_files: List, save_to_disk: bool = True, uploads_dir: str = "./uploads") -> List[Dict[str, Any]]:
+        """Xử lý danh sách file đã upload và lưu vào disk"""
         processed_files = []
         logger.info(f"Processing {len(uploaded_files)} uploaded files")
+
+        # Create uploads directory if needed
+        if save_to_disk and not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+            logger.info(f"Created uploads directory: {uploads_dir}")
 
         for uploaded_file in uploaded_files:
             # Validate file
@@ -124,6 +129,14 @@ class FileProcessor:
 
             if text.strip():
                 file_size_bytes = len(file_content)
+
+                # Save file to disk
+                if save_to_disk:
+                    file_path = os.path.join(uploads_dir, uploaded_file.name)
+                    with open(file_path, 'wb') as f:
+                        f.write(file_content)
+                    logger.info(f"Saved file to disk: {file_path}")
+
                 processed_files.append({
                     'name': uploaded_file.name,
                     'content': text,
@@ -146,3 +159,25 @@ class FileProcessor:
         if len(content) <= max_chars:
             return content
         return content[:max_chars] + "..."
+
+    @staticmethod
+    def check_uploads_directory(uploads_dir: str = "./uploads") -> Dict[str, Any]:
+        """Check if uploads directory exists and has files"""
+        result = {
+            'exists': False,
+            'has_files': False,
+            'file_count': 0,
+            'files': []
+        }
+
+        if os.path.exists(uploads_dir):
+            result['exists'] = True
+            files = [f for f in os.listdir(uploads_dir) if os.path.isfile(os.path.join(uploads_dir, f))]
+            result['file_count'] = len(files)
+            result['has_files'] = len(files) > 0
+            result['files'] = files
+            logger.debug(f"Uploads directory check: {result['file_count']} files found")
+        else:
+            logger.debug(f"Uploads directory does not exist: {uploads_dir}")
+
+        return result

@@ -356,7 +356,11 @@ def main():
             # Process files
             if st.button("🔄 Xử lý Files", type="primary"):
                 with st.spinner("Đang xử lý files..."):
-                    processed_files = FileProcessor.process_uploaded_files(uploaded_files)
+                    processed_files = FileProcessor.process_uploaded_files(
+                        uploaded_files,
+                        save_to_disk=True,
+                        uploads_dir=Config.UPLOADS_DIR
+                    )
                     st.session_state.processed_files = processed_files
                     
                     if processed_files:
@@ -494,6 +498,9 @@ def main():
     with tab3:
         st.header("📋 Project Estimation")
 
+        # Check uploads directory
+        uploads_check = FileProcessor.check_uploads_directory(Config.UPLOADS_DIR)
+
         # Prerequisites check section
         st.subheader("🔍 Prerequisites Check")
         col1, col2, col3 = st.columns(3)
@@ -503,12 +510,11 @@ def main():
             st.metric("GraphRAG Status", graphrag_status)
 
         with col2:
-            files_count = len(st.session_state.processed_files)
-            files_status = f"✅ {files_count} files" if files_count > 0 else "❌ No files"
-            st.metric("Documents", files_status)
+            files_status = f"✅ {uploads_check['file_count']} files" if uploads_check['has_files'] else "❌ No files"
+            st.metric("Documents (./uploads)", files_status)
 
         with col3:
-            ready_status = "✅ Ready" if (st.session_state.graphrag_handler.is_initialized and files_count > 0) else "❌ Not Ready"
+            ready_status = "✅ Ready" if (st.session_state.graphrag_handler.is_initialized and uploads_check['has_files']) else "❌ Not Ready"
             st.metric("Estimation Ready", ready_status)
 
         st.divider()
@@ -517,9 +523,11 @@ def main():
         if not st.session_state.graphrag_handler.is_initialized:
             st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi thực hiện estimation.")
             st.info("💡 Đi đến tab 'Upload Files' để khởi tạo GraphRAG và upload tài liệu.")
-        elif not st.session_state.processed_files:
+        elif not uploads_check['has_files']:
             st.warning("⚠️ Vui lòng upload và xử lý tài liệu trước khi thực hiện estimation.")
             st.info("💡 Đi đến tab 'Upload Files' để upload tài liệu dự án.")
+            if uploads_check['exists']:
+                st.caption(f"📁 Uploads directory exists but empty: {Config.UPLOADS_DIR}")
         else:
             # One-click estimation button
             st.subheader("🚀 Auto Project Analysis & Estimation")

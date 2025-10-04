@@ -41,6 +41,7 @@ class Config:
 
     # Working Directory
     WORKING_DIR = "./graphrag_workspace"
+    UPLOADS_DIR = "./uploads"
     
     # Visualization Configuration
     GRAPH_LAYOUT = "spring"  # spring, circular, random, shell, etc.
