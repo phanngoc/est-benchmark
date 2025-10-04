@@ -6,11 +6,18 @@ load_dotenv()
 
 class Config:
     """Configuration class for the Fast GraphRAG Streamlit app"""
-    
+
     # OpenAI API Configuration
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     CONCURRENT_TASK_LIMIT = int(os.getenv("CONCURRENT_TASK_LIMIT", "8"))
+
+    # Logging Configuration
+    LOG_DIR = os.getenv("LOG_DIR", "./logs")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB per log file
+    LOG_BACKUP_COUNT = 30  # Keep 30 backup files
+    LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] - %(message)s"
     
     # App Configuration
     APP_TITLE = "Fast GraphRAG Document Analyzer"
@@ -39,6 +46,17 @@ class Config:
     GRAPH_LAYOUT = "spring"  # spring, circular, random, shell, etc.
     MAX_NODES_DISPLAY = 100
     
+
+    # Estimation History Configuration
+    ESTIMATION_HISTORY_DB_PATH = "./estimation_history_db"
+    ESTIMATION_HISTORY_COLLECTION = "estimation_history"
+    EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI embedding model
+    EMBEDDING_CACHE_DIR = "./embedding_cache"
+    
+    # Few-Shot Prompting Configuration
+    ENABLE_FEW_SHOT_PROMPTING = True  # Enable/disable historical data usage
+    FEW_SHOT_SIMILARITY_THRESHOLD = 0.6  # Minimum similarity score (0-1)
+    FEW_SHOT_MAX_EXAMPLES = 5  # Maximum number of historical examples
 
     @classmethod
     def validate_config(cls):

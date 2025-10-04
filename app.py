@@ -10,7 +10,12 @@ from config import Config
 from utils.file_processor import FileProcessor
 from utils.graphrag_handler import GraphRAGHandler
 from utils.visualization import GraphVisualization
-from enhanced_estimation_workflow import EnhancedEstimationWorkflow
+from workflow import EnhancedEstimationWorkflow
+from utils.logger import init_logging, get_logger
+
+# Initialize logging system
+init_logging(log_dir=Config.LOG_DIR, log_level=Config.LOG_LEVEL)
+logger = get_logger(__name__)
 
 # Page configuration
 st.set_page_config(
@@ -23,6 +28,19 @@ st.set_page_config(
 # Initialize session state
 if 'graphrag_handler' not in st.session_state:
     st.session_state.graphrag_handler = GraphRAGHandler(Config.WORKING_DIR)
+    # Auto-initialize GraphRAG with default configuration
+    if not st.session_state.graphrag_handler.is_initialized:
+        logger.info("Auto-initializing GraphRAG on application load")
+        success = st.session_state.graphrag_handler.initialize(
+            domain=Config.DEFAULT_DOMAIN,
+            entity_types=Config.DEFAULT_ENTITY_TYPES,
+            example_queries=Config.DEFAULT_EXAMPLE_QUERIES
+        )
+        if success:
+            logger.info("GraphRAG auto-initialized successfully")
+        else:
+            logger.error("GraphRAG auto-initialization failed")
+
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = []
 if 'query_history' not in st.session_state:
@@ -40,7 +58,9 @@ def auto_analyze_project_scope(graphrag_handler) -> str:
     """
     Auto-generate comprehensive project description từ uploaded documents
     """
+    logger.info("Starting auto_analyze_project_scope")
     if not graphrag_handler or not graphrag_handler.is_initialized:
+        logger.warning("GraphRAG handler not initialized for project scope analysis")
         return ""
 
     # Multiple queries to understand project scope comprehensively
@@ -59,13 +79,17 @@ def auto_analyze_project_scope(graphrag_handler) -> str:
             result = graphrag_handler.query(query, with_references=False)
             if result and result.get('response'):
                 project_insights.append(result['response'])
+                logger.debug(f"Project query successful: {query[:50]}...")
         except Exception as e:
             st.warning(f"Could not analyze: {query[:50]}... - {str(e)}")
+            logger.error(f"Project query failed: {query[:50]}... - {str(e)}")
             continue
 
     if not project_insights:
+        logger.warning("No project insights gathered from documents")
         return ""
 
+    logger.info(f"Successfully gathered {len(project_insights)} project insights")
     # Combine insights into comprehensive project description
     combined_description = f"""
 Phát triển dự án với các yêu cầu sau được trích xuất từ tài liệu:
@@ -81,16 +105,20 @@ def run_project_estimation():
     """
     Main function để chạy project estimation với Streamlit integration
     """
+    logger.info("Starting run_project_estimation")
     if st.session_state.estimation_in_progress:
         st.warning("🔄 Estimation đang chạy. Vui lòng đợi...")
+        logger.warning("Estimation already in progress")
         return
 
     if not st.session_state.graphrag_handler.is_initialized:
         st.error("❌ GraphRAG chưa được khởi tạo. Vui lòng khởi tạo GraphRAG trước.")
+        logger.error("Estimation attempted without GraphRAG initialization")
         return
 
     if not st.session_state.processed_files:
         st.error("❌ Chưa có tài liệu nào được xử lý. Vui lòng upload và xử lý tài liệu trước.")
+        logger.error("Estimation attempted without processed files")
         return
 
     try:
@@ -107,7 +135,20 @@ def run_project_estimation():
 
         if not project_description:
             st.error("❌ Không thể phân tích project từ tài liệu. Vui lòng kiểm tra lại tài liệu.")
+            logger.error("Failed to analyze project from documents")
             return
+
+        # Display analyzed project description
+        with st.expander("📄 Project Description (Analyzed from Documents)", expanded=True):
+            st.markdown("**This is the intermediate analysis that will be used as input for the estimation workflow:**")
+            st.text_area(
+                "Auto-generated Project Scope",
+                value=project_description,
+                height=300,
+                disabled=True,
+                key="analyzed_project_desc"
+            )
+            st.info("💡 This description was automatically generated from your uploaded documents using GraphRAG analysis.")
 
         # Step 2: Pre-fetch GraphRAG insights to avoid serialization issues
         status_text.text("🔍 Đang pre-fetch GraphRAG insights...")
@@ -137,6 +178,7 @@ def run_project_estimation():
         status_text.text("🚀 Đang chạy estimation workflow...")
         progress_bar.progress(50)
 
+        logger.info("Running estimation workflow with project description and GraphRAG insights")
         result = st.session_state.estimation_workflow.run_estimation(
             project_description,
             graphrag_insights=graphrag_insights
@@ -148,6 +190,7 @@ def run_project_estimation():
 
             st.session_state.project_estimation_result = result
             st.success("🎉 Project estimation đã hoàn thành thành công!")
+            logger.info(f"Estimation completed successfully: {result.get('total_effort', 0):.1f} mandays")
 
             # Display summary
             total_effort = result.get('total_effort', 0)
@@ -164,15 +207,32 @@ def run_project_estimation():
 
         else:
             st.error("❌ Estimation workflow failed. Vui lòng thử lại.")
+            logger.error(f"Estimation workflow failed with status: {result.get('workflow_status', 'unknown')}")
 
     except Exception as e:
         st.error(f"❌ Lỗi khi chạy estimation: {str(e)}")
+        logger.exception(f"Exception during estimation: {str(e)}")
     finally:
         st.session_state.estimation_in_progress = False
+        logger.info("Estimation process completed")
+
+def get_formatted_file_size(file_info: Dict[str, Any]) -> str:
+    """Get formatted file size with backward compatibility"""
+    if 'size_formatted' in file_info:
+        return file_info['size_formatted']
+    elif 'size_bytes' in file_info:
+        return FileProcessor.format_file_size(file_info['size_bytes'])
+    else:
+        # Old format with only size_mb
+        size_bytes = int(file_info['size_mb'] * 1024 * 1024)
+        return FileProcessor.format_file_size(size_bytes)
 
 def main():
     """Main application function"""
-    
+    logger.info("="*60)
+    logger.info("Fast GraphRAG Document Analyzer - Application Started")
+    logger.info("="*60)
+
     # Header
     st.title("🧠 " + Config.APP_TITLE)
     st.markdown(f"**{Config.APP_DESCRIPTION}**")
@@ -180,17 +240,35 @@ def main():
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Cấu hình")
-        
+
+        # System Status Indicator
+        st.markdown("### 📊 System Status")
+        if st.session_state.graphrag_handler.is_initialized:
+            st.success("🟢 GraphRAG: Ready")
+        else:
+            st.error("🔴 GraphRAG: Not Initialized")
+
+        st.divider()
+
         # API Key input
         api_key = st.text_input(
             "OpenAI API Key",
             value=Config.OPENAI_API_KEY,
             type="password",
-            help="Nhập API key của bạn từ OpenAI"
+            help="Nhập API key của bạn từ OpenAI (hoặc để trống để dùng từ .env file)"
         )
         
+        # Use API key from input or fall back to config
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
+        elif Config.OPENAI_API_KEY:
+            os.environ["OPENAI_API_KEY"] = Config.OPENAI_API_KEY
+
+        # Show API key status
+        if Config.OPENAI_API_KEY:
+            st.success("✅ API Key loaded from .env file")
+        else:
+            st.warning("⚠️ No API Key found in .env file")
         
         # Domain configuration
         st.subheader("📝 Cấu hình Domain")
@@ -220,10 +298,20 @@ def main():
             help="Các câu hỏi mẫu để GraphRAG hiểu cách trả lời"
         )
         example_queries = [q.strip() for q in example_queries_input.split('\n') if q.strip()]
-        
-        # Initialize GraphRAG button
-        if st.button("🚀 Khởi tạo GraphRAG", type="primary"):
+
+        # Re-initialize GraphRAG button (for custom configuration)
+        if st.session_state.graphrag_handler.is_initialized:
+            st.info("ℹ️ GraphRAG đã được khởi tạo tự động. Bạn có thể cấu hình lại nếu muốn.")
+            button_label = "🔄 Re-initialize với cấu hình mới"
+            button_type = "secondary"
+        else:
+            st.warning("⚠️ Auto-initialization failed. Vui lòng thử khởi tạo thủ công.")
+            button_label = "🚀 Khởi tạo GraphRAG"
+            button_type = "primary"
+
+        if st.button(button_label, type=button_type):
             with st.spinner("Đang khởi tạo GraphRAG..."):
+                logger.info(f"Manual GraphRAG initialization requested")
                 success = st.session_state.graphrag_handler.initialize(
                     domain=domain,
                     entity_types=entity_types,
@@ -231,8 +319,10 @@ def main():
                 )
                 if success:
                     st.success("✅ GraphRAG đã được khởi tạo thành công!")
+                    logger.info("Manual GraphRAG initialization successful")
                 else:
                     st.error("❌ Lỗi khi khởi tạo GraphRAG")
+                    logger.error("Manual GraphRAG initialization failed")
     
     # Main content area
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📊 Visualization", "ℹ️ Info"])
@@ -261,7 +351,7 @@ def main():
                         # Show file info
                         st.subheader("📋 Thông tin Files")
                         for file_info in processed_files:
-                            with st.expander(f"📄 {file_info['name']} ({file_info['size_mb']:.1f}MB)"):
+                            with st.expander(f"📄 {file_info['name']} ({file_info['size_formatted']})"):
                                 preview = FileProcessor.get_file_preview(file_info['content'])
                                 st.text(preview)
         
@@ -270,17 +360,25 @@ def main():
             st.subheader("📚 Files đã xử lý")
             
             # File statistics
-            total_size = sum(f['size_mb'] for f in st.session_state.processed_files)
+            # Backward compatibility: calculate size_bytes from size_mb if not present
+            total_size_bytes = 0
+            for f in st.session_state.processed_files:
+                if 'size_bytes' in f:
+                    total_size_bytes += f['size_bytes']
+                else:
+                    # Convert from MB to bytes for old format
+                    total_size_bytes += int(f['size_mb'] * 1024 * 1024)
+
             file_types = {}
             for f in st.session_state.processed_files:
                 file_type = f['type']
                 file_types[file_type] = file_types.get(file_type, 0) + 1
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Tổng số files", len(st.session_state.processed_files))
             with col2:
-                st.metric("Tổng dung lượng", f"{total_size:.1f} MB")
+                st.metric("Tổng dung lượng", FileProcessor.format_file_size(total_size_bytes))
             with col3:
                 st.metric("Loại files", len(file_types))
             
@@ -443,17 +541,45 @@ def main():
                     # Convert to DataFrame for better display
                     df = pd.DataFrame(estimation_data)
 
-                    # Select and rename columns for display
-                    display_columns = ['id', 'category', 'parent_task', 'sub_task', 'description', 'estimation_manday', 'confidence_level']
+                    # Select and rename columns for display - INCLUDING ROLE AND ROLE-SPECIFIC ESTIMATIONS
+                    display_columns = ['id', 'category', 'role', 'parent_task', 'sub_task', 'description', 
+                                      'estimation_backend_manday', 'estimation_frontend_manday', 
+                                      'estimation_qa_manday', 'estimation_infra_manday',
+                                      'estimation_manday', 'confidence_level']
+                    
                     if all(col in df.columns for col in display_columns):
                         display_df = df[display_columns].copy()
-                        display_df.columns = ['ID', 'Category', 'Parent Task', 'Sub Task', 'Description', 'Effort (mandays)', 'Confidence']
-                        display_df['Effort (mandays)'] = display_df['Effort (mandays)'].round(1)
+                        display_df.columns = ['ID', 'Category', 'Role', 'Parent Task', 'Sub Task', 'Description',
+                                             'Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)',
+                                             'Total (days)', 'Confidence']
+                        
+                        # Round estimation columns
+                        for col in ['Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)', 'Total (days)']:
+                            display_df[col] = display_df[col].round(1)
+                        
                         display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
 
                         st.dataframe(display_df, use_container_width=True, height=400)
                     else:
                         st.dataframe(df, use_container_width=True, height=400)
+                
+                # Add role summary metrics
+                st.subheader("👥 Effort by Role")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                total_backend = df['estimation_backend_manday'].sum() if 'estimation_backend_manday' in df.columns else 0
+                total_frontend = df['estimation_frontend_manday'].sum() if 'estimation_frontend_manday' in df.columns else 0
+                total_qa = df['estimation_qa_manday'].sum() if 'estimation_qa_manday' in df.columns else 0
+                total_infra = df['estimation_infra_manday'].sum() if 'estimation_infra_manday' in df.columns else 0
+                
+                with col1:
+                    st.metric("Backend", f"{total_backend:.1f} days")
+                with col2:
+                    st.metric("Frontend", f"{total_frontend:.1f} days")
+                with col3:
+                    st.metric("QA", f"{total_qa:.1f} days")
+                with col4:
+                    st.metric("Infra", f"{total_infra:.1f} days")
 
                 # Export and visualization section
                 st.subheader("📁 Export & Visualization")

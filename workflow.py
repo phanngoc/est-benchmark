@@ -28,6 +28,13 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langgraph.checkpoint.memory import MemorySaver
 
+# Import logging
+from utils.logger import get_logger
+from config import Config
+
+# Initialize logger
+logger = get_logger(__name__)
+
 # ========================
 # Enhanced Data Models
 # ========================
@@ -36,11 +43,16 @@ from langgraph.checkpoint.memory import MemorySaver
 class TaskBreakdown:
     """Enhanced model cho việc break task với validation"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    category: str = ""
+    category: str = ""  # Business logic category (Authentication, User Management, etc.)
+    role: str = ""  # Backend, Frontend, QA, Infra
     parent_task: str = ""
     sub_task: str = ""
     description: str = ""
-    estimation_manday: float = 0.0
+    estimation_manday: float = 0.0  # Total estimation (sum of role-specific estimations)
+    estimation_backend_manday: float = 0.0
+    estimation_frontend_manday: float = 0.0
+    estimation_qa_manday: float = 0.0
+    estimation_infra_manday: float = 0.0
     complexity: str = "Medium"  # Low, Medium, High
     dependencies: List[str] = field(default_factory=list)
     priority: str = "Medium"  # Low, Medium, High
@@ -52,10 +64,15 @@ class TaskBreakdown:
         return {
             'id': self.id,
             'category': self.category,
+            'role': self.role,
             'parent_task': self.parent_task,
             'sub_task': self.sub_task,
             'description': self.description,
             'estimation_manday': self.estimation_manday,
+            'estimation_backend_manday': self.estimation_backend_manday,
+            'estimation_frontend_manday': self.estimation_frontend_manday,
+            'estimation_qa_manday': self.estimation_qa_manday,
+            'estimation_infra_manday': self.estimation_infra_manday,
             'complexity': self.complexity,
             'dependencies': self.dependencies,
             'priority': self.priority,
@@ -118,15 +135,31 @@ class EnhancedEstimationLLM:
 
         Nhiệm vụ của bạn:
         1. Phân tích task được cung cấp với context từ GraphRAG
-        2. Xác định các category chính cần cho dự án
+        2. Xác định các BUSINESS LOGIC CATEGORIES chính cần cho dự án
         3. Tạo chiến lược để breakdown task một cách toàn diện
         4. Chuẩn bị input cho các workers chuyên biệt
+
+        QUAN TRỌNG: Categories phải là business logic categories (không phải technical roles):
+        - Authentication & Authorization
+        - User Management
+        - Product Management
+        - Order Management
+        - Payment Processing
+        - Reporting & Analytics
+        - Notification System
+        - Content Management
+        - Search & Filtering
+        - Admin Dashboard
+        - API Integration
+        - Security & Compliance
+        - Documentation
+        v.v...
 
         Bạn sẽ có thông tin từ GraphRAG để hiểu rõ hơn về context và requirements.
 
         Trả về kết quả dưới dạng JSON với format:
         {
-            "categories": ["Frontend", "Backend", "Database", "DevOps", "Testing", "Documentation"],
+            "categories": ["Authentication & Authorization", "User Management", "Product Management", "Reporting & Analytics", "Notification System", "Documentation"],
             "analysis_strategy": "Chiến lược phân tích tổng thể",
             "complexity_assessment": "Low/Medium/High",
             "estimated_timeline": "Ước tính thời gian tổng thể"
@@ -141,13 +174,21 @@ class EnhancedEstimationLLM:
         1. Sử dụng thông tin từ GraphRAG để hiểu sâu về requirements
         2. Break down category được giao thành parent tasks và sub tasks
         3. Tạo description chi tiết cho mỗi task
-        4. Xác định dependencies và priority
+        4. XÁC ĐỊNH ROLE CHO TỪNG TASK (Backend, Frontend, QA, Infra)
+        5. Xác định dependencies và priority
 
         Nguyên tắc breakdown:
         - Mỗi sub-task phải có scope rõ ràng và có thể estimate được
         - Task size lý tưởng: 0.5-3 mandays cho middle developer
         - Xem xét dependencies giữa các task
         - Ưu tiên các task critical path
+        - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, QA, hoặc Infra)
+
+        Role definitions:
+        - Backend: API development, business logic, database operations, server-side processing
+        - Frontend: UI components, user interactions, client-side logic, responsive design
+        - QA: Testing (unit, integration, E2E), test automation, quality assurance
+        - Infra: DevOps, deployment, CI/CD, monitoring, infrastructure setup
 
         Trả về kết quả dưới dạng JSON với format:
         {
@@ -155,6 +196,7 @@ class EnhancedEstimationLLM:
                 {
                     "id": "unique_id",
                     "category": "category_name",
+                    "role": "Backend|Frontend|QA|Infra",
                     "parent_task": "Parent Task Name",
                     "sub_task": "Specific Sub Task",
                     "description": "Detailed description",
@@ -195,11 +237,22 @@ class EnhancedEstimationLLM:
         - Dependencies: Nhiều dependencies (+20-30%)
         - Risk level: High risk (+30-50%)
 
+        QUAN TRỌNG - Role-specific Estimation:
+        - Mỗi task đã được assign một role cụ thể (Backend, Frontend, QA, hoặc Infra)
+        - Bạn cần estimate effort cho role tương ứng
+        - Các role khác sẽ có estimation = 0
+        - Ví dụ: Nếu task có role="Backend", thì chỉ estimation_backend_manday > 0, còn lại = 0
+
         Trả về kết quả dưới dạng JSON với format:
         {
             "estimation": {
                 "id": "task_id",
+                "role": "Backend|Frontend|QA|Infra",
                 "estimation_manday": 2.5,
+                "estimation_backend_manday": 2.5,
+                "estimation_frontend_manday": 0.0,
+                "estimation_qa_manday": 0.0,
+                "estimation_infra_manday": 0.0,
                 "confidence_level": 0.8,
                 "breakdown": {
                     "development": 2.0,
@@ -258,16 +311,16 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
     """
     Enhanced Orchestrator với GraphRAG integration
     """
-    print(f"🎯 Enhanced Orchestrator đang phân tích task: {state['original_task']}")
+    logger.info(f"🎯 Enhanced Orchestrator đang phân tích task: {state['original_task']}")
 
     llm_handler = EnhancedEstimationLLM()
 
     # Sử dụng pre-fetched GraphRAG insights từ state
     graphrag_insights = state.get('graphrag_insights', [])
     if graphrag_insights:
-        print(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
+        logger.info(f"📊 Đang sử dụng {len(graphrag_insights)} GraphRAG insights có sẵn...")
     else:
-        print("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
+        logger.warning("⚠️ Không có GraphRAG insights, sử dụng analysis cơ bản")
 
     # Tạo context từ GraphRAG insights
     graphrag_context = ""
@@ -300,8 +353,8 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
 
             categories = result.get('categories', [])
 
-            print(f"✅ Orchestrator đã phân tích: {len(categories)} categories")
-            print(f"📈 Complexity: {result.get('complexity_assessment', 'Unknown')}")
+            logger.info(f"✅ Orchestrator đã phân tích: {len(categories)} categories")
+            logger.info(f"📈 Complexity: {result.get('complexity_assessment', 'Unknown')}")
 
             return {
                 'main_categories': categories,
@@ -312,7 +365,7 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
             raise ValueError("Không thể parse JSON response từ Orchestrator")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Enhanced Orchestrator: {e}")
+        logger.error(f"❌ Lỗi trong Enhanced Orchestrator: {e}")
         return {
             'main_categories': [],
             'graphrag_insights': graphrag_insights,
@@ -332,7 +385,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
     category_focus = worker_input.get('category_focus', 'General')
     original_task = worker_input.get('original_task', '')
 
-    print(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
+    logger.info(f"👷‍♂️ Worker 1 (Task Breakdown) đang xử lý category: {category_focus}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -367,7 +420,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
                 task['worker_source'] = 'task_breakdown_worker'
                 task['confidence_level'] = 0.8  # Default confidence từ breakdown
 
-            print(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
+            logger.info(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
 
             return {
                 'breakdown_results': breakdown_tasks
@@ -376,7 +429,7 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Breakdown Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Task Breakdown Worker: {e}")
+        logger.error(f"❌ Lỗi trong Task Breakdown Worker: {e}")
         return {
             'breakdown_results': []
         }
@@ -389,20 +442,49 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     """
     Worker 2: Chuyên estimation effort cho các task
     Receives task_breakdown via Send() mechanism
+    Enhanced with few-shot prompting from historical data
     """
     # Extract task data from worker input
     task_breakdown = worker_input.get('task_breakdown', {})
     task_name = task_breakdown.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
+    logger.info(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
+
+    # NEW: Search for similar historical estimations for few-shot prompting
+    from utils.estimation_history_manager import get_history_manager
+
+    few_shot_context = ""
+    try:
+        history_manager = get_history_manager()
+
+        # Search for similar tasks
+        similar_tasks = history_manager.search_similar(
+            description=task_breakdown.get('description', ''),
+            category=task_breakdown.get('category'),
+            role=task_breakdown.get('role'),
+            top_k=5,
+            similarity_threshold=0.6
+        )
+
+        if similar_tasks:
+            logger.debug(f"   📚 Found {len(similar_tasks)} similar historical tasks")
+            few_shot_context = history_manager.build_few_shot_prompt(similar_tasks, max_examples=5)
+        else:
+            logger.debug(f"   ℹ️ No similar historical tasks found")
+            few_shot_context = "No similar historical tasks found. Please estimate based on your expertise."
+
+    except Exception as e:
+        logger.warning(f"   ⚠️ Could not retrieve historical data: {e}")
+        few_shot_context = "Historical data unavailable. Please estimate based on your expertise."
 
     messages = [
         SystemMessage(content=llm_handler.get_estimation_worker_prompt()),
         HumanMessage(content=f"""
         Task cần estimation:
         - Category: {task_breakdown.get('category', '')}
+        - Role: {task_breakdown.get('role', 'Backend')}
         - Parent Task: {task_breakdown.get('parent_task', '')}
         - Sub Task: {task_breakdown.get('sub_task', '')}
         - Description: {task_breakdown.get('description', '')}
@@ -410,7 +492,13 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         - Dependencies: {task_breakdown.get('dependencies', [])}
         - Priority: {task_breakdown.get('priority', 'Medium')}
 
+        QUAN TRỌNG: Task này có role="{task_breakdown.get('role', 'Backend')}"
+        Chỉ estimate cho role này, các role khác để 0.
+
+        {few_shot_context}
+
         Hãy estimate effort cho middle developer (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
+        Sử dụng các historical examples bên trên làm tham khảo để có estimation chính xác hơn.
         """)
     ]
 
@@ -426,8 +514,36 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
             # Merge với original task data
             estimated_task = task_breakdown.copy()
+            
+            # Extract role-specific estimations
+            estimation_backend = estimation_data.get('estimation_backend_manday', 0.0)
+            estimation_frontend = estimation_data.get('estimation_frontend_manday', 0.0)
+            estimation_qa = estimation_data.get('estimation_qa_manday', 0.0)
+            estimation_infra = estimation_data.get('estimation_infra_manday', 0.0)
+            
+            # Calculate total estimation
+            total_estimation = estimation_backend + estimation_frontend + estimation_qa + estimation_infra
+            
+            # If LLM didn't provide role-specific breakdown, use total and assign to appropriate role
+            if total_estimation == 0.0:
+                total_estimation = estimation_data.get('estimation_manday', 1.0)
+                task_role = task_breakdown.get('role', 'Backend')
+                if task_role == 'Backend':
+                    estimation_backend = total_estimation
+                elif task_role == 'Frontend':
+                    estimation_frontend = total_estimation
+                elif task_role == 'QA':
+                    estimation_qa = total_estimation
+                elif task_role == 'Infra':
+                    estimation_infra = total_estimation
+            
             estimated_task.update({
-                'estimation_manday': estimation_data.get('estimation_manday', 0),
+                'estimation_manday': total_estimation,
+                'estimation_backend_manday': estimation_backend,
+                'estimation_frontend_manday': estimation_frontend,
+                'estimation_qa_manday': estimation_qa,
+                'estimation_infra_manday': estimation_infra,
+                'original_estimation': total_estimation,
                 'confidence_level': estimation_data.get('confidence_level', 0.7),
                 'estimation_breakdown': estimation_data.get('breakdown', {}),
                 'risk_factors': estimation_data.get('risk_factors', []),
@@ -435,7 +551,17 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'estimation_worker'
             })
 
-            print(f"✅ Worker 2 estimated: {estimation_data.get('estimation_manday', 0):.1f} mandays")
+            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
+
+            # NEW: Save successful estimation to history for future reference
+            try:
+                history_manager.save_estimation(
+                    estimated_task,
+                    project_name="current_estimation"
+                )
+                logger.debug(f"   💾 Saved to estimation history")
+            except Exception as e:
+                logger.warning(f"   ⚠️ Could not save to history: {e}")
 
             return {
                 'estimation_results': [estimated_task]
@@ -444,11 +570,24 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Estimation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Estimation Worker: {e}")
+        logger.error(f"❌ Lỗi trong Estimation Worker: {e}")
         # Return task với default estimation
         fallback_task = task_breakdown.copy() if task_breakdown else {}
+        task_role = fallback_task.get('role', 'Backend')
+        
+        # Assign 1.0 manday to appropriate role
+        backend_est = 1.0 if task_role == 'Backend' else 0.0
+        frontend_est = 1.0 if task_role == 'Frontend' else 0.0
+        qa_est = 1.0 if task_role == 'QA' else 0.0
+        infra_est = 1.0 if task_role == 'Infra' else 0.0
+        
         fallback_task.update({
             'estimation_manday': 1.0,  # Default fallback
+            'estimation_backend_manday': backend_est,
+            'estimation_frontend_manday': frontend_est,
+            'estimation_qa_manday': qa_est,
+            'estimation_infra_manday': infra_est,
+            'original_estimation': 1.0,
             'confidence_level': 0.5,
             'worker_source': 'estimation_worker_fallback'
         })
@@ -469,7 +608,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
     estimation_task = worker_input.get('estimation_task', {})
     task_name = estimation_task.get('sub_task', 'Unknown Task')
 
-    print(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
+    logger.info(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
 
     llm_handler = EnhancedEstimationLLM()
 
@@ -503,9 +642,29 @@ def validation_worker(worker_input) -> Dict[str, Any]:
 
             # Create final validated task
             validated_task = estimation_task.copy()
+            
+            # Get validated estimation (total)
+            validated_estimation = validation_data.get('validated_estimation', estimation_task.get('estimation_manday', 0))
+            original_estimation = validation_data.get('original_estimation', estimation_task.get('estimation_manday', 0))
+            
+            # Calculate adjustment ratio if validation changed the estimation
+            adjustment_ratio = 1.0
+            if original_estimation > 0:
+                adjustment_ratio = validated_estimation / original_estimation
+            
+            # Apply adjustment ratio to role-specific estimations
+            original_backend = estimation_task.get('estimation_backend_manday', 0.0)
+            original_frontend = estimation_task.get('estimation_frontend_manday', 0.0)
+            original_qa = estimation_task.get('estimation_qa_manday', 0.0)
+            original_infra = estimation_task.get('estimation_infra_manday', 0.0)
+            
             validated_task.update({
-                'estimation_manday': validation_data.get('validated_estimation', estimation_task.get('estimation_manday', 0)),
-                'original_estimation': validation_data.get('original_estimation', estimation_task.get('estimation_manday', 0)),
+                'estimation_manday': validated_estimation,
+                'estimation_backend_manday': original_backend * adjustment_ratio,
+                'estimation_frontend_manday': original_frontend * adjustment_ratio,
+                'estimation_qa_manday': original_qa * adjustment_ratio,
+                'estimation_infra_manday': original_infra * adjustment_ratio,
+                'original_estimation': original_estimation,
                 'confidence_level': validation_data.get('confidence_level', estimation_task.get('confidence_level', 0.7)),
                 'validation_notes': validation_data.get('validation_notes', ''),
                 'adjustment_reason': validation_data.get('adjustment_reason', ''),
@@ -513,7 +672,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
                 'worker_source': 'validation_worker'
             })
 
-            print(f"✅ Worker 3 validated: {validation_data.get('original_estimation', 0):.1f} → {validation_data.get('validated_estimation', 0):.1f} mandays")
+            logger.info(f"✅ Worker 3 validated: {original_estimation:.1f} → {validated_estimation:.1f} mandays")
 
             return {
                 'validated_results': [validated_task]
@@ -522,7 +681,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
             raise ValueError("Không thể parse JSON response từ Validation Worker")
 
     except Exception as e:
-        print(f"❌ Lỗi trong Validation Worker: {e}")
+        logger.error(f"❌ Lỗi trong Validation Worker: {e}")
         # Return task với minimal validation
         fallback_task = estimation_task.copy() if estimation_task else {}
         fallback_task.update({
@@ -542,7 +701,7 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công breakdown workers cho mỗi category
     """
     categories = state.get('main_categories', [])
-    print(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
+    logger.info(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
 
     sends = []
     for category in categories:
@@ -562,7 +721,7 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công estimation workers cho mỗi breakdown task
     """
     breakdown_results = state.get('breakdown_results', [])
-    print(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
+    logger.info(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
 
     sends = []
     for task_breakdown in breakdown_results:
@@ -581,7 +740,7 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công validation workers cho mỗi estimation task
     """
     estimation_results = state.get('estimation_results', [])
-    print(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
+    logger.info(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
 
     sends = []
     for estimation_task in estimation_results:
@@ -603,12 +762,12 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
     """
     Enhanced Synthesizer với advanced features
     """
-    print("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
+    logger.info("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
 
     validated_results = state.get('validated_results', [])
 
     if not validated_results:
-        print("⚠️ Không có validated results từ workers")
+        logger.warning("⚠️ Không có validated results từ workers")
         return {
             'final_estimation_data': [],
             'total_effort': 0.0,
@@ -689,11 +848,11 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
     # Tạo enhanced mermaid diagram
     mermaid_diagram = create_enhanced_mermaid_diagram(validated_results, validation_summary)
 
-    print(f"✅ Enhanced Synthesizer hoàn thành:")
-    print(f"   - {len(validated_results)} tasks")
-    print(f"   - {total_effort:.1f} mandays total")
-    print(f"   - {total_confidence:.2f} average confidence")
-    print(f"   - {adjusted_tasks} tasks adjusted")
+    logger.info(f"✅ Enhanced Synthesizer hoàn thành:")
+    logger.info(f"   - {len(validated_results)} tasks")
+    logger.info(f"   - {total_effort:.1f} mandays total")
+    logger.info(f"   - {total_confidence:.2f} average confidence")
+    logger.info(f"   - {adjusted_tasks} tasks adjusted")
 
     return {
         'final_estimation_data': validated_results,
@@ -803,10 +962,15 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
 
     try:
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-            # Main estimation table với enhanced columns
+            # Main estimation table với enhanced columns including role-specific estimations
             estimation_columns = [
-                'id', 'category', 'parent_task', 'sub_task', 'description',
-                'estimation_manday', 'original_estimation', 'confidence_level',
+                'id', 'category', 'role', 'parent_task', 'sub_task', 'description',
+                'estimation_manday', 
+                'estimation_backend_manday',
+                'estimation_frontend_manday',
+                'estimation_qa_manday',
+                'estimation_infra_manday',
+                'original_estimation', 'confidence_level',
                 'complexity', 'priority', 'worker_source', 'validation_notes',
                 'adjustment_reason', 'dependencies', 'risk_factors', 'assumptions'
             ]
@@ -852,6 +1016,28 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
                 category_summary = category_summary.reset_index()
                 category_summary.to_excel(writer, sheet_name='Category Analysis', index=False)
 
+            # Role breakdown - NEW SHEET
+            if 'role' in df.columns:
+                # Calculate totals for each role
+                role_summary_data = []
+                for role in ['Backend', 'Frontend', 'QA', 'Infra']:
+                    role_column = f'estimation_{role.lower()}_manday'
+                    if role_column in df.columns:
+                        total_effort = df[role_column].sum()
+                        task_count = df[df['role'] == role].shape[0]
+                        avg_effort = total_effort / task_count if task_count > 0 else 0
+                        role_summary_data.append({
+                            'Role': role,
+                            'Task Count': task_count,
+                            'Total Effort (mandays)': round(total_effort, 2),
+                            'Average Effort (mandays)': round(avg_effort, 2),
+                            'Percentage': f"{(total_effort / df['estimation_manday'].sum() * 100):.1f}%" if df['estimation_manday'].sum() > 0 else "0%"
+                        })
+                
+                if role_summary_data:
+                    role_summary_df = pd.DataFrame(role_summary_data)
+                    role_summary_df.to_excel(writer, sheet_name='Role Breakdown', index=False)
+
             # Risk analysis sheet
             risk_data = []
             for risk_level in ['high_risk_tasks', 'medium_risk_tasks', 'low_risk_tasks']:
@@ -880,11 +1066,11 @@ def export_enhanced_excel(df: pd.DataFrame, validation_summary: Dict[str, Any], 
                 complexity_df = pd.DataFrame(complexity_data)
                 complexity_df.to_excel(writer, sheet_name='Complexity Distribution', index=False)
 
-        print(f"✅ Enhanced Excel export completed: {filepath}")
+        logger.info(f"✅ Enhanced Excel export completed: {filepath}")
         return filepath
 
     except Exception as e:
-        print(f"❌ Lỗi khi export Enhanced Excel: {e}")
+        logger.error(f"❌ Lỗi khi export Enhanced Excel: {e}")
         return ""
 
 # ========================
@@ -945,13 +1131,13 @@ class EnhancedEstimationWorkflow:
         # Compile workflow
         self.workflow = builder.compile(checkpointer=self.memory)
 
-        print("✅ Enhanced Estimation Workflow đã được build thành công!")
+        logger.info("✅ Enhanced Estimation Workflow đã được build thành công!")
 
     def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
         """
         Chạy enhanced estimation workflow
         """
-        print(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
+        logger.info(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
 
         initial_state = {
             "original_task": task_description,
@@ -973,12 +1159,12 @@ class EnhancedEstimationWorkflow:
             config = {"configurable": {"thread_id": thread_id}}
             result = self.workflow.invoke(initial_state, config=config)
 
-            print(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
+            logger.info(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
 
             return result
 
         except Exception as e:
-            print(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
+            logger.error(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
             return {
                 "workflow_status": "failed",
                 "error": str(e)
@@ -990,7 +1176,7 @@ class EnhancedEstimationWorkflow:
         """
         estimation_data = result.get('final_estimation_data', [])
         if not estimation_data:
-            print("⚠️ Không có dữ liệu để export")
+            logger.warning("⚠️ Không có dữ liệu để export")
             return ""
 
         df = pd.DataFrame(estimation_data)
@@ -1025,11 +1211,11 @@ class EnhancedEstimationWorkflow:
             with open(filename, 'wb') as f:
                 f.write(mermaid_png)
 
-            print(f"✅ Đã tạo enhanced workflow diagram: {filename}")
+            logger.info(f"✅ Đã tạo enhanced workflow diagram: {filename}")
             return filename
 
         except Exception as e:
-            print(f"❌ Lỗi khi tạo enhanced workflow diagram: {e}")
+            logger.error(f"❌ Lỗi khi tạo enhanced workflow diagram: {e}")
             return ""
 
 # ========================
@@ -1065,14 +1251,14 @@ if __name__ == "__main__":
         mermaid_diagram = enhanced_workflow.get_mermaid_diagram(result)
         validation_summary = enhanced_workflow.get_validation_summary(result)
 
-        print(f"\n📊 Enhanced Estimation Results:")
-        print(f"- Total effort: {result.get('total_effort', 0):.1f} mandays")
-        print(f"- Average confidence: {result.get('total_confidence', 0):.2f}")
-        print(f"- Tasks processed: {len(result.get('final_estimation_data', []))}")
-        print(f"- Excel file: {excel_file}")
-        print(f"- Tasks adjusted: {validation_summary.get('adjustment_summary', {}).get('tasks_adjusted', 0)}")
+        logger.info(f"\n📊 Enhanced Estimation Results:")
+        logger.info(f"- Total effort: {result.get('total_effort', 0):.1f} mandays")
+        logger.info(f"- Average confidence: {result.get('total_confidence', 0):.2f}")
+        logger.info(f"- Tasks processed: {len(result.get('final_estimation_data', []))}")
+        logger.info(f"- Excel file: {excel_file}")
+        logger.info(f"- Tasks adjusted: {validation_summary.get('adjustment_summary', {}).get('tasks_adjusted', 0)}")
 
-        print(f"\n🎨 Enhanced Mermaid Diagram:\n{mermaid_diagram}")
+        logger.info(f"\n🎨 Enhanced Mermaid Diagram:\n{mermaid_diagram}")
 
     # Tạo workflow visualization
     workflow_diagram = enhanced_workflow.visualize_workflow()

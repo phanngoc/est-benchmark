@@ -5,31 +5,50 @@ from typing import List, Dict, Any, Optional
 import PyPDF2
 from docx import Document
 import markdown
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class FileProcessor:
     """Class để xử lý các loại file khác nhau"""
-    
+
     SUPPORTED_EXTENSIONS = {
         '.txt': 'text/plain',
         '.pdf': 'application/pdf',
         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         '.md': 'text/markdown'
     }
+
+    @staticmethod
+    def format_file_size(size_bytes: int) -> str:
+        """Format file size with appropriate unit (Bytes, KB, MB)"""
+        if size_bytes < 1024:
+            return f"{size_bytes} Bytes"
+        elif size_bytes < 1024 * 1024:
+            size_kb = size_bytes / 1024
+            return f"{size_kb:.1f}KB"
+        else:
+            size_mb = size_bytes / (1024 * 1024)
+            return f"{size_mb:.1f}MB"
     
     @staticmethod
     def extract_text_from_file(file_content: bytes, filename: str) -> str:
         """Trích xuất text từ file content"""
         file_ext = os.path.splitext(filename)[1].lower()
-        
+        logger.debug(f"Extracting text from {filename} (type: {file_ext})")
+
         try:
             if file_ext == '.txt':
-                return file_content.decode('utf-8')
+                text = file_content.decode('utf-8')
+                logger.debug(f"Extracted {len(text)} chars from TXT file: {filename}")
+                return text
             
             elif file_ext == '.pdf':
                 pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
                 text = ""
                 for page in pdf_reader.pages:
                     text += page.extract_text() + "\n"
+                logger.debug(f"Extracted {len(text)} chars from PDF file ({len(pdf_reader.pages)} pages): {filename}")
                 return text
             
             elif file_ext == '.docx':
@@ -37,6 +56,7 @@ class FileProcessor:
                 text = ""
                 for paragraph in doc.paragraphs:
                     text += paragraph.text + "\n"
+                logger.debug(f"Extracted {len(text)} chars from DOCX file ({len(doc.paragraphs)} paragraphs): {filename}")
                 return text
             
             elif file_ext == '.md':
@@ -46,13 +66,16 @@ class FileProcessor:
                 # Simple HTML to text conversion
                 import re
                 text = re.sub(r'<[^>]+>', '', html)
+                logger.debug(f"Extracted {len(text)} chars from MD file: {filename}")
                 return text
-            
+
             else:
+                logger.error(f"Unsupported file type: {file_ext} for file: {filename}")
                 raise ValueError(f"Unsupported file type: {file_ext}")
-                
+
         except Exception as e:
             st.error(f"Lỗi khi xử lý file {filename}: {str(e)}")
+            logger.error(f"Error extracting text from {filename}: {str(e)}")
             return ""
     
     @staticmethod
@@ -85,28 +108,36 @@ class FileProcessor:
     def process_uploaded_files(uploaded_files: List) -> List[Dict[str, Any]]:
         """Xử lý danh sách file đã upload"""
         processed_files = []
-        
+        logger.info(f"Processing {len(uploaded_files)} uploaded files")
+
         for uploaded_file in uploaded_files:
             # Validate file
             validation = FileProcessor.validate_file(uploaded_file)
             if not validation['valid']:
                 st.error(f"File {uploaded_file.name}: {validation['error']}")
+                logger.warning(f"File validation failed for {uploaded_file.name}: {validation['error']}")
                 continue
-            
+
             # Extract text
             file_content = uploaded_file.getvalue()
             text = FileProcessor.extract_text_from_file(file_content, uploaded_file.name)
-            
+
             if text.strip():
+                file_size_bytes = len(file_content)
                 processed_files.append({
                     'name': uploaded_file.name,
                     'content': text,
                     'size_mb': validation['size_mb'],
+                    'size_bytes': file_size_bytes,
+                    'size_formatted': FileProcessor.format_file_size(file_size_bytes),
                     'type': os.path.splitext(uploaded_file.name)[1].lower()
                 })
+                logger.info(f"Successfully processed file: {uploaded_file.name} ({FileProcessor.format_file_size(file_size_bytes)})")
             else:
                 st.warning(f"Không thể trích xuất text từ file: {uploaded_file.name}")
-        
+                logger.warning(f"No text extracted from file: {uploaded_file.name}")
+
+        logger.info(f"Completed processing: {len(processed_files)}/{len(uploaded_files)} files successful")
         return processed_files
     
     @staticmethod

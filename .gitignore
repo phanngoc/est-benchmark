@@ -33,9 +33,13 @@ graphrag_workspace/
 
 # Log files
 *.log
+logs/*.log
+logs/*.log.*
 
 # MacOS
 .DS_Store
 
 # Windows
 Thumbs.db
+embedding_cache/
+estimation_history_db/
