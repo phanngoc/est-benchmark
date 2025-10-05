@@ -165,7 +165,10 @@ class GraphRAGInsight:
 # ========================
 
 class EnhancedOrchestratorState(TypedDict):
-    """Enhanced state cho Orchestrator với GraphRAG integration"""
+    """
+    Enhanced state cho Orchestrator với GraphRAG integration
+    UPDATED: Keeps validated_results for backward compatibility with Option 3 (conditional validation)
+    """
     original_task: str  # Task gốc từ user
     graphrag_insights: List[Dict[str, Any]]  # Insights từ GraphRAG queries
 
@@ -174,11 +177,11 @@ class EnhancedOrchestratorState(TypedDict):
 
     # Worker results với consistent annotations
     breakdown_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 1
-    estimation_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 2
-    validated_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 3
+    estimation_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 2 (includes Option 1 buffer)
+    validated_results: Annotated[List[Dict[str, Any]], operator.add]  # Kết quả từ Worker 3 (Option 3: conditional only)
 
     # Final outputs
-    final_estimation_data: List[Dict[str, Any]]  # Final serializable data
+    final_estimation_data: List[Dict[str, Any]]  # Final serializable data (merged from estimation + validated)
     total_effort: float  # Tổng effort (manday)
     total_confidence: float  # Confidence score trung bình
     mermaid_diagram: str  # Mermaid code cho visualization
@@ -295,6 +298,8 @@ class EnhancedEstimationLLM:
         2. Estimate effort dựa trên middle developer (3 năm kinh nghiệm)
         3. Tính toán effort với unit là manday (7 giờ/ngày)
         4. Đánh giá confidence level của estimation
+        5. QUAN TRỌNG: Provide CONSERVATIVE estimates - prefer slightly higher estimates for safety
+        6. Consider risks, dependencies, and complexity for realistic estimates
 
         Tiêu chuẩn estimation cho middle developer (3 năm kinh nghiệm):
         - Simple CRUD operations: 0.5-1 manday
@@ -310,9 +315,18 @@ class EnhancedEstimationLLM:
         - Documentation: 10-15% của development effort
 
         Factors ảnh hưởng đến estimation:
-        - Complexity: Low (-20%), Medium (baseline), High (+50%)
-        - Dependencies: Nhiều dependencies (+20-30%)
-        - Risk level: High risk (+30-50%)
+        - Complexity: Low (baseline), Medium (+15%), High (+30%)
+        - Dependencies: Nhiều dependencies (+15-25%)
+        - Risk level: High risk (+20-40%)
+        - Unknown technology: Add 20-30% learning buffer
+        - External dependencies: Add 15-25% coordination buffer
+
+        CONSERVATIVE ESTIMATION PHILOSOPHY:
+        - Prefer realistic/slightly higher estimates over optimistic ones
+        - Account for code review, testing, and debugging time
+        - Consider integration complexity and potential blockers
+        - Include buffer for unexpected issues (built into base estimates)
+        - Better to overestimate slightly than underestimate significantly
 
         QUAN TRỌNG - Role-specific Estimation with Task Type Breakdown:
         - Mỗi task đã được assign một role cụ thể (Backend, Frontend, QA, hoặc Infra)
@@ -528,11 +542,62 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
 # Worker 2: Estimation Worker
 # ========================
 
+def calculate_smart_buffer(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate intelligent buffer based on risk factors, complexity, and dependencies.
+    Returns buffer info with percentage and reasoning.
+    """
+    buffer = 0.0
+    reasons = []
+
+    # Complexity-based buffer
+    complexity = task_data.get('complexity', 'Medium')
+    if complexity == 'High':
+        buffer += 0.20
+        reasons.append("High complexity (+20%)")
+    elif complexity == 'Medium':
+        buffer += 0.10
+        reasons.append("Medium complexity (+10%)")
+
+    # Risk factors buffer
+    risk_factors = task_data.get('risk_factors', [])
+    if len(risk_factors) > 2:
+        buffer += 0.15
+        reasons.append(f"Multiple risk factors ({len(risk_factors)}) (+15%)")
+    elif len(risk_factors) > 0:
+        buffer += 0.08
+        reasons.append(f"Some risk factors ({len(risk_factors)}) (+8%)")
+
+    # Dependencies buffer
+    dependencies = task_data.get('dependencies', [])
+    if len(dependencies) > 3:
+        buffer += 0.12
+        reasons.append(f"Many dependencies ({len(dependencies)}) (+12%)")
+    elif len(dependencies) > 0:
+        buffer += 0.05
+        reasons.append(f"Some dependencies ({len(dependencies)}) (+5%)")
+
+    # Priority-based buffer for critical tasks
+    priority = task_data.get('priority', 'Medium')
+    if priority == 'High':
+        buffer += 0.10
+        reasons.append("High priority task (+10%)")
+
+    # Cap maximum buffer at 50%
+    buffer = min(buffer, 0.50)
+
+    return {
+        'buffer_percentage': buffer,
+        'buffer_reasons': reasons,
+        'adjustment_applied': buffer > 0
+    }
+
 def estimation_worker(worker_input) -> Dict[str, Any]:
     """
     Worker 2: Chuyên estimation effort cho các task
     Receives task_breakdown via Send() mechanism
     Enhanced with few-shot prompting from historical data
+    NOW INCLUDES: Smart buffer calculation and built-in validation (Option 1)
     """
     # Extract task data from worker input
     task_breakdown = worker_input.get('task_breakdown', {})
@@ -667,30 +732,54 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 elif task_role == 'Infra':
                     estimation_infra = total_estimation
 
+            # OPTION 1: Apply smart buffer calculation with built-in validation
+            buffer_info = calculate_smart_buffer(task_breakdown)
+            buffer_multiplier = 1.0 + buffer_info['buffer_percentage']
+
+            # Apply buffer to all estimations
+            buffered_total = total_estimation * buffer_multiplier
+            buffered_backend = estimation_backend * buffer_multiplier
+            buffered_frontend = estimation_frontend * buffer_multiplier
+            buffered_qa = estimation_qa * buffer_multiplier
+            buffered_infra = estimation_infra * buffer_multiplier
+
+            # Apply buffer to detailed breakdowns
+            buffered_backend_impl = backend_impl * buffer_multiplier
+            buffered_backend_fix = backend_fix * buffer_multiplier
+            buffered_backend_test = backend_test * buffer_multiplier
+            buffered_frontend_impl = frontend_impl * buffer_multiplier
+            buffered_frontend_fix = frontend_fix * buffer_multiplier
+            buffered_frontend_test = frontend_test * buffer_multiplier
+            buffered_responsive_impl = responsive_impl * buffer_multiplier
+            buffered_qa_impl = qa_impl * buffer_multiplier
+
             estimated_task.update({
-                'estimation_manday': total_estimation,
-                'estimation_backend_manday': estimation_backend,
-                'estimation_frontend_manday': estimation_frontend,
-                'estimation_qa_manday': estimation_qa,
-                'estimation_infra_manday': estimation_infra,
-                'original_estimation': total_estimation,
+                'estimation_manday': buffered_total,
+                'estimation_backend_manday': buffered_backend,
+                'estimation_frontend_manday': buffered_frontend,
+                'estimation_qa_manday': buffered_qa,
+                'estimation_infra_manday': buffered_infra,
+                'original_estimation': total_estimation,  # Keep original before buffer
+                'buffer_applied': buffer_info['buffer_percentage'],
+                'buffer_reasons': buffer_info['buffer_reasons'],
                 'confidence_level': estimation_data.get('confidence_level', 0.7),
                 'estimation_breakdown': estimation_data.get('breakdown', {}),
                 'risk_factors': estimation_data.get('risk_factors', []),
                 'assumptions': estimation_data.get('assumptions', []),
-                'worker_source': 'estimation_worker',
-                # Sun Asterisk detailed breakdown
-                'backend_implement': backend_impl,
-                'backend_fixbug': backend_fix,
-                'backend_unittest': backend_test,
-                'frontend_implement': frontend_impl,
-                'frontend_fixbug': frontend_fix,
-                'frontend_unittest': frontend_test,
-                'responsive_implement': responsive_impl,
-                'qa_implement': qa_impl
+                'worker_source': 'estimation_worker_with_validation',
+                'validation_notes': f"Smart buffer applied: {buffer_info['buffer_percentage']*100:.0f}% - " + ", ".join(buffer_info['buffer_reasons']) if buffer_info['adjustment_applied'] else "No buffer needed",
+                # Sun Asterisk detailed breakdown (with buffer)
+                'backend_implement': buffered_backend_impl,
+                'backend_fixbug': buffered_backend_fix,
+                'backend_unittest': buffered_backend_test,
+                'frontend_implement': buffered_frontend_impl,
+                'frontend_fixbug': buffered_frontend_fix,
+                'frontend_unittest': buffered_frontend_test,
+                'responsive_implement': buffered_responsive_impl,
+                'qa_implement': buffered_qa_impl
             })
 
-            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} mandays (Role: {task_breakdown.get('role', 'Unknown')})")
+            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} → {buffered_total:.1f} mandays (Buffer: {buffer_info['buffer_percentage']*100:.0f}%, Role: {task_breakdown.get('role', 'Unknown')})")
 
             # NEW: Save successful estimation to history for future reference
             try:
@@ -735,7 +824,81 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         }
 
 # ========================
-# Worker 3: Effort Calculator & Validator
+# OPTION 2: Rule-based Validation (Deterministic)
+# ========================
+
+def apply_validation_rules(estimation_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Apply deterministic validation rules to estimation results.
+    This is a post-processing step without LLM calls (Option 2).
+
+    Returns updated estimation results with additional validation metadata.
+    """
+    validated_results = []
+
+    for task in estimation_results:
+        # Skip if already has buffer applied (from Option 1)
+        if task.get('buffer_applied', 0) > 0:
+            validated_results.append(task)
+            continue
+
+        # Calculate buffer for tasks without it
+        buffer_info = calculate_smart_buffer(task)
+        buffer_multiplier = 1.0 + buffer_info['buffer_percentage']
+
+        # Apply buffer to estimation
+        original_estimation = task.get('estimation_manday', 0)
+        validated_task = task.copy()
+
+        validated_task.update({
+            'estimation_manday': original_estimation * buffer_multiplier,
+            'original_estimation': original_estimation,
+            'buffer_applied': buffer_info['buffer_percentage'],
+            'buffer_reasons': buffer_info['buffer_reasons'],
+            'validation_notes': f"Rule-based buffer: {buffer_info['buffer_percentage']*100:.0f}% - " + ", ".join(buffer_info['buffer_reasons']) if buffer_info['adjustment_applied'] else "No buffer needed",
+            'validation_method': 'deterministic_rules'
+        })
+
+        validated_results.append(validated_task)
+
+    return validated_results
+
+# ========================
+# OPTION 3: Conditional Validation Filter
+# ========================
+
+def should_validate(task: Dict[str, Any]) -> bool:
+    """
+    Determine if a task needs LLM-based validation (Option 3).
+    Only validate high-risk, low-confidence, or critical path tasks.
+
+    Returns True if task requires validation, False otherwise.
+    """
+    # High-risk tasks (>2 risk factors)
+    risk_factors = task.get('risk_factors', [])
+    if len(risk_factors) > 2:
+        return True
+
+    # Low confidence tasks (<0.6)
+    confidence = task.get('confidence_level', 1.0)
+    if confidence < 0.6:
+        return True
+
+    # Critical path tasks (high priority + many dependencies)
+    priority = task.get('priority', 'Medium')
+    dependencies = task.get('dependencies', [])
+    if priority == 'High' and len(dependencies) > 2:
+        return True
+
+    # High complexity with low confidence
+    complexity = task.get('complexity', 'Medium')
+    if complexity == 'High' and confidence < 0.75:
+        return True
+
+    return False
+
+# ========================
+# Worker 3: Conditional Validation Worker (Option 3)
 # ========================
 
 def validation_worker(worker_input) -> Dict[str, Any]:
@@ -876,13 +1039,19 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
 
 def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     """
-    Phân công validation workers cho mỗi estimation task
+    OPTION 3: Conditional validation - only validate high-risk tasks
+    Phân công validation workers CHỈ cho tasks cần validation
     """
     estimation_results = state.get('estimation_results', [])
-    logger.info(f"📋 Đang phân công validation workers cho {len(estimation_results)} tasks")
+
+    # Filter tasks that need validation
+    tasks_needing_validation = [task for task in estimation_results if should_validate(task)]
+    tasks_skipped = len(estimation_results) - len(tasks_needing_validation)
+
+    logger.info(f"📋 Conditional validation: {len(tasks_needing_validation)} tasks need validation, {tasks_skipped} tasks skip validation")
 
     sends = []
-    for estimation_task in estimation_results:
+    for estimation_task in tasks_needing_validation:
         send = Send(
             "validation_worker",
             {
@@ -900,13 +1069,46 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
 def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any]:
     """
     Enhanced Synthesizer với advanced features
+    NOW INCLUDES: Option 2 rule-based validation for tasks that skipped LLM validation
     """
     logger.info("🔄 Enhanced Synthesizer đang tổng hợp kết quả...")
 
+    # Get results from both estimation and validation workers
+    estimation_results = state.get('estimation_results', [])
     validated_results = state.get('validated_results', [])
 
+    # OPTION 2 + OPTION 3: Merge results
+    # - validated_results: Tasks that went through LLM validation (Option 3 filtered)
+    # - estimation_results: All tasks from estimation worker
+    # Apply rule-based validation to tasks that skipped LLM validation
+
+    if not estimation_results and not validated_results:
+        logger.warning("⚠️ Không có results từ workers")
+        return {
+            'final_estimation_data': [],
+            'total_effort': 0.0,
+            'total_confidence': 0.0,
+            'validation_summary': {},
+            'workflow_status': 'no_results'
+        }
+
+    # Create validated task ID set
+    validated_task_ids = {task.get('id') for task in validated_results}
+
+    # Find tasks that skipped validation
+    tasks_skipped_validation = [
+        task for task in estimation_results
+        if task.get('id') not in validated_task_ids
+    ]
+
+    # OPTION 2: Apply rule-based validation to tasks that skipped LLM validation
+    if tasks_skipped_validation:
+        logger.info(f"📋 Applying rule-based validation to {len(tasks_skipped_validation)} tasks that skipped LLM validation")
+        rule_validated = apply_validation_rules(tasks_skipped_validation)
+        validated_results.extend(rule_validated)
+
     if not validated_results:
-        logger.warning("⚠️ Không có validated results từ workers")
+        logger.warning("⚠️ No final validated results")
         return {
             'final_estimation_data': [],
             'total_effort': 0.0,

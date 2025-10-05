@@ -42,6 +42,10 @@ class Config:
     # Working Directory
     WORKING_DIR = "./graphrag_workspace"
     UPLOADS_DIR = "./uploads"
+
+    # File Metadata Configuration
+    METADATA_FILE = ".metadata.json"
+    HASH_ALGORITHM = "sha256"
     
     # Visualization Configuration
     GRAPH_LAYOUT = "spring"  # spring, circular, random, shell, etc.

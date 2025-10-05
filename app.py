@@ -356,22 +356,56 @@ def main():
             # Process files
             if st.button("🔄 Xử lý Files", type="primary"):
                 with st.spinner("Đang xử lý files..."):
-                    processed_files = FileProcessor.process_uploaded_files(
+                    result = FileProcessor.process_uploaded_files(
                         uploaded_files,
                         save_to_disk=True,
-                        uploads_dir=Config.UPLOADS_DIR
+                        uploads_dir=Config.UPLOADS_DIR,
+                        metadata_file=Config.METADATA_FILE,
+                        hash_algorithm=Config.HASH_ALGORITHM
                     )
+
+                    processed_files = result['processed_files']
+                    stats = result['stats']
+                    duplicates = result['duplicates']
+
                     st.session_state.processed_files = processed_files
-                    
+
+                    # Show statistics
+                    st.subheader("📊 Upload Summary")
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        st.metric("✅ New Files", stats['new'])
+                    with col2:
+                        st.metric("🔄 Updated Files", stats['updated'])
+                    with col3:
+                        st.metric("⏭️ Duplicates Skipped", stats['duplicates'])
+                    with col4:
+                        st.metric("❌ Errors", stats['errors'])
+
+                    # Show success message
                     if processed_files:
-                        st.success(f"✅ Đã xử lý thành công {len(processed_files)} files!")
-                        
+                        total_processed = stats['new'] + stats['updated']
+                        st.success(f"✅ Đã xử lý thành công {total_processed} files!")
+
+                        # Show duplicate warnings if any
+                        if duplicates:
+                            st.warning(f"⚠️ {len(duplicates)} file(s) bị bỏ qua do trùng lặp:")
+                            for dup in duplicates:
+                                dup_type_icon = "📝" if dup['type'] == 'exact' else "🔄"
+                                st.caption(f"{dup_type_icon} **{dup['name']}** - {dup['message']}")
+
                         # Show file info
                         st.subheader("📋 Thông tin Files")
                         for file_info in processed_files:
-                            with st.expander(f"📄 {file_info['name']} ({file_info['size_formatted']})"):
+                            status_icon = "🆕" if file_info['status'] == 'new' else "🔄"
+                            with st.expander(f"{status_icon} {file_info['name']} ({file_info['size_formatted']}) - Hash: {file_info['hash']}"):
+                                st.caption(f"**Status**: {file_info['status'].upper()}")
+                                st.caption(f"**Hash**: `{file_info['hash_full']}`")
                                 preview = FileProcessor.get_file_preview(file_info['content'])
                                 st.text(preview)
+                    else:
+                        st.info("ℹ️ Không có file mới nào được xử lý.")
         
         # Show processed files
         if st.session_state.processed_files:

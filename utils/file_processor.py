@@ -6,6 +6,7 @@ import PyPDF2
 from docx import Document
 import markdown
 from utils.logger import get_logger
+from utils.file_metadata import FileMetadataManager
 
 logger = get_logger(__name__)
 
@@ -105,15 +106,31 @@ class FileProcessor:
         return result
     
     @staticmethod
-    def process_uploaded_files(uploaded_files: List, save_to_disk: bool = True, uploads_dir: str = "./uploads") -> List[Dict[str, Any]]:
-        """Xử lý danh sách file đã upload và lưu vào disk"""
+    def process_uploaded_files(uploaded_files: List, save_to_disk: bool = True, uploads_dir: str = "./uploads",
+                               metadata_file: str = ".metadata.json", hash_algorithm: str = "sha256") -> Dict[str, Any]:
+        """
+        Xử lý danh sách file đã upload với duplicate detection
+        Returns: {
+            'processed_files': List[Dict],
+            'stats': {
+                'new': int, 'duplicates': int, 'updated': int, 'errors': int
+            },
+            'duplicates': List[Dict]  # Thông tin các file duplicate
+        }
+        """
         processed_files = []
-        logger.info(f"Processing {len(uploaded_files)} uploaded files")
+        duplicate_files = []
+        stats = {'new': 0, 'duplicates': 0, 'updated': 0, 'errors': 0}
+
+        logger.info(f"Processing {len(uploaded_files)} uploaded files with duplicate detection")
 
         # Create uploads directory if needed
         if save_to_disk and not os.path.exists(uploads_dir):
             os.makedirs(uploads_dir)
             logger.info(f"Created uploads directory: {uploads_dir}")
+
+        # Initialize metadata manager
+        metadata_manager = FileMetadataManager(uploads_dir, metadata_file)
 
         for uploaded_file in uploaded_files:
             # Validate file
@@ -121,15 +138,53 @@ class FileProcessor:
             if not validation['valid']:
                 st.error(f"File {uploaded_file.name}: {validation['error']}")
                 logger.warning(f"File validation failed for {uploaded_file.name}: {validation['error']}")
+                stats['errors'] += 1
+                continue
+
+            # Get file content and compute hash
+            file_content = uploaded_file.getvalue()
+            file_hash = FileMetadataManager.compute_file_hash(file_content, hash_algorithm)
+            file_size_bytes = len(file_content)
+
+            # Check for duplicates
+            duplicate_check = metadata_manager.check_duplicate(
+                uploaded_file.name,
+                file_hash,
+                file_size_bytes
+            )
+
+            # Handle exact duplicates (skip)
+            if duplicate_check['is_duplicate'] and duplicate_check['duplicate_type'] == 'exact':
+                duplicate_files.append({
+                    'name': uploaded_file.name,
+                    'type': duplicate_check['duplicate_type'],
+                    'message': duplicate_check['message'],
+                    'existing_file': duplicate_check['existing_file'],
+                    'hash': file_hash[:16] + '...',
+                    'size_formatted': FileProcessor.format_file_size(file_size_bytes)
+                })
+                stats['duplicates'] += 1
+                logger.info(f"Skipped exact duplicate: {uploaded_file.name}")
+                continue
+
+            # Handle content duplicates (different filename, same content) - skip
+            if duplicate_check['is_duplicate'] and duplicate_check['duplicate_type'] == 'content':
+                duplicate_files.append({
+                    'name': uploaded_file.name,
+                    'type': duplicate_check['duplicate_type'],
+                    'message': duplicate_check['message'],
+                    'existing_file': duplicate_check['existing_file'],
+                    'hash': file_hash[:16] + '...',
+                    'size_formatted': FileProcessor.format_file_size(file_size_bytes)
+                })
+                stats['duplicates'] += 1
+                logger.info(f"Skipped content duplicate: {uploaded_file.name} (matches {duplicate_check['existing_file']})")
                 continue
 
             # Extract text
-            file_content = uploaded_file.getvalue()
             text = FileProcessor.extract_text_from_file(file_content, uploaded_file.name)
 
             if text.strip():
-                file_size_bytes = len(file_content)
-
                 # Save file to disk
                 if save_to_disk:
                     file_path = os.path.join(uploads_dir, uploaded_file.name)
@@ -137,21 +192,41 @@ class FileProcessor:
                         f.write(file_content)
                     logger.info(f"Saved file to disk: {file_path}")
 
+                # Add to metadata
+                metadata_manager.add_file(uploaded_file.name, file_hash, file_size_bytes, processed=True)
+
+                # Track stats
+                if duplicate_check['duplicate_type'] == 'updated':
+                    stats['updated'] += 1
+                    status = 'updated'
+                else:
+                    stats['new'] += 1
+                    status = 'new'
+
                 processed_files.append({
                     'name': uploaded_file.name,
                     'content': text,
                     'size_mb': validation['size_mb'],
                     'size_bytes': file_size_bytes,
                     'size_formatted': FileProcessor.format_file_size(file_size_bytes),
-                    'type': os.path.splitext(uploaded_file.name)[1].lower()
+                    'type': os.path.splitext(uploaded_file.name)[1].lower(),
+                    'hash': file_hash[:16] + '...',  # Short hash for display
+                    'hash_full': file_hash,
+                    'status': status
                 })
-                logger.info(f"Successfully processed file: {uploaded_file.name} ({FileProcessor.format_file_size(file_size_bytes)})")
+                logger.info(f"Successfully processed file ({status}): {uploaded_file.name} ({FileProcessor.format_file_size(file_size_bytes)})")
             else:
                 st.warning(f"Không thể trích xuất text từ file: {uploaded_file.name}")
                 logger.warning(f"No text extracted from file: {uploaded_file.name}")
+                stats['errors'] += 1
 
-        logger.info(f"Completed processing: {len(processed_files)}/{len(uploaded_files)} files successful")
-        return processed_files
+        logger.info(f"Processing complete - New: {stats['new']}, Updated: {stats['updated']}, Duplicates: {stats['duplicates']}, Errors: {stats['errors']}")
+
+        return {
+            'processed_files': processed_files,
+            'stats': stats,
+            'duplicates': duplicate_files
+        }
     
     @staticmethod
     def get_file_preview(content: str, max_chars: int = 500) -> str:
