@@ -251,13 +251,41 @@ class EnhancedEstimationLLM:
         5. Xác định dependencies và priority
         6. Tạo sub_no (Sub.No) cho mỗi task theo pattern phân cấp (1.1, 1.2, 2.1, etc.)
         7. Xác định feature/screen name và reference document
+        8. 🚨 QUAN TRỌNG: ĐẢM BẢO MỖI TASK <21H (KHÔNG QUÁ 2.5 MANDAYS)
+
+        STRICT TASK SIZE CONSTRAINTS (1 manday = 7 giờ):
+        ⚠️ TUYỆT ĐỐI KHÔNG TẠO TASK >2.5 MANDAYS (~17.5 GIỜ)
+        - Simple tasks: 0.5-1 manday (3.5-7h) - CRUD đơn giản, UI components cơ bản
+        - Medium tasks: 1-2 mandays (7-14h) - Business logic vừa phải, API integration
+        - Complex tasks: 2-2.5 mandays (14-17.5h) - Logic phức tạp, nhiều components
+        - ❌ NEVER: >2.5 mandays - NẾU TASK LỚN HƠN → PHẢI CHIA NHỎ THÀNH NHIỀU SUB-TASKS
+
+        Task Size Examples (GOOD ✅ vs BAD ❌):
+        ✅ GOOD - Right size (<21h each):
+          - "Implement JWT token generation logic" (~1-1.5 mandays)
+          - "Create login API endpoint with validation" (~1 manday)
+          - "Design user database schema with indexes" (~1 manday)
+          - "Build login form UI component with validation" (~1-1.5 mandays)
+          - "Write unit tests for authentication service" (~0.5-1 manday)
+
+        ❌ BAD - Too large (>21h, must split):
+          - "Build entire authentication system" → SPLIT INTO:
+            ✅ "Design authentication database schema"
+            ✅ "Implement JWT token generation and validation"
+            ✅ "Create login/logout API endpoints"
+            ✅ "Build login UI components"
+            ✅ "Implement password reset flow"
+            ✅ "Add authentication middleware"
+            ✅ "Write authentication tests"
 
         Nguyên tắc breakdown:
-        - Mỗi sub-task phải có scope rõ ràng và có thể estimate được
-        - Task size lý tưởng: 0.5-3 mandays cho middle developer
+        - Mỗi sub-task phải có scope RÕ RÀNG, CỤ THỂ, và có thể estimate được
+        - Task phải đủ NHỎ để 1 developer hoàn thành trong <3 ngày làm việc
         - Xem xét dependencies giữa các task
         - Ưu tiên các task critical path
         - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, QA, hoặc Infra)
+        - NẾU TASK QUÁ LỚN: Chia thành các bước nhỏ hơn với dependencies rõ ràng
+        - VALIDATION: Trước khi trả về, kiểm tra lại TẤT CẢ tasks đều <2.5 mandays
 
         Role definitions:
         - Backend: API development, business logic, database operations, server-side processing
@@ -519,15 +547,55 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
             result = json.loads(json_match.group())
             breakdown_tasks = result.get('breakdown', [])
 
-            # Add worker source info
+            # POST-PROCESSING VALIDATION: Check task size constraint <21h
+            validated_tasks = []
+            oversized_tasks = []
+
             for task in breakdown_tasks:
                 task['worker_source'] = 'task_breakdown_worker'
                 task['confidence_level'] = 0.8  # Default confidence từ breakdown
 
-            logger.info(f"✅ Worker 1 completed: {len(breakdown_tasks)} tasks cho {category_focus}")
+                # Estimate rough complexity to check if task might be >2.5 mandays
+                complexity = task.get('complexity', 'Medium')
+                description = task.get('description', '')
+                sub_task = task.get('sub_task', '')
+
+                # Heuristic check for oversized tasks
+                is_potentially_oversized = False
+
+                # Check 1: High complexity with vague/broad scope
+                if complexity == 'High' and any(keyword in description.lower() or keyword in sub_task.lower()
+                    for keyword in ['entire', 'complete', 'full', 'whole', 'all', 'toàn bộ', 'hoàn chỉnh']):
+                    is_potentially_oversized = True
+
+                # Check 2: Description too long (>200 chars suggests complex task)
+                if len(description) > 200:
+                    is_potentially_oversized = True
+
+                # Check 3: Multiple major components mentioned
+                component_keywords = ['database', 'api', 'ui', 'authentication', 'authorization', 'validation', 'testing', 'deployment']
+                component_count = sum(1 for keyword in component_keywords if keyword in description.lower())
+                if component_count > 3:
+                    is_potentially_oversized = True
+
+                if is_potentially_oversized:
+                    oversized_tasks.append(task)
+                    logger.warning(f"⚠️ Potentially oversized task detected: {task.get('sub_task', 'Unknown')} (complexity: {complexity})")
+                else:
+                    validated_tasks.append(task)
+
+            # If oversized tasks found, log warning but still include them
+            # (Let estimation worker handle the actual effort calculation)
+            if oversized_tasks:
+                logger.warning(f"⚠️ {len(oversized_tasks)} potentially oversized tasks detected. These may exceed 2.5 mandays.")
+                logger.warning(f"   Consider manual review: {[t.get('sub_task', 'Unknown') for t in oversized_tasks]}")
+                # Still add them to results for estimation worker to process
+                validated_tasks.extend(oversized_tasks)
+
+            logger.info(f"✅ Worker 1 completed: {len(validated_tasks)} tasks cho {category_focus} ({len(oversized_tasks)} may need splitting)")
 
             return {
-                'breakdown_results': breakdown_tasks
+                'breakdown_results': validated_tasks
             }
         else:
             raise ValueError("Không thể parse JSON response từ Breakdown Worker")

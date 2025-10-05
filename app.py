@@ -118,9 +118,11 @@ def run_project_estimation():
         logger.error("Estimation attempted without GraphRAG initialization")
         return
 
-    if not st.session_state.processed_files:
-        st.error("❌ Chưa có tài liệu nào được xử lý. Vui lòng upload và xử lý tài liệu trước.")
-        logger.error("Estimation attempted without processed files")
+    # Check uploads directory exists and has files
+    uploads_check = FileProcessor.check_uploads_directory(Config.UPLOADS_DIR)
+    if not uploads_check['exists'] or not uploads_check['has_files']:
+        st.error(f"❌ Uploads directory không tồn tại hoặc trống. Vui lòng upload tài liệu trước.")
+        logger.error(f"Uploads directory check failed: {uploads_check}")
         return
 
     try:

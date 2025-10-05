@@ -43,3 +43,4 @@ logs/*.log.*
 Thumbs.db
 estimation_history_db/
 uploads/
+embedding_cache/

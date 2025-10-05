@@ -160,18 +160,6 @@ class EmbeddingService:
 
         return embeddings
 
-    def get_dimension(self) -> int:
-        """Get embedding dimension for the current model"""
-        if "text-embedding-3-small" in self.model:
-            return 1536
-        elif "text-embedding-3-large" in self.model:
-            return 3072
-        elif "text-embedding-ada-002" in self.model:
-            return 1536
-        else:
-            # Generate a test embedding to get dimension
-            test_embedding = self.generate_embedding("test", use_cache=False)
-            return len(test_embedding)
 
 
 # Singleton instance
