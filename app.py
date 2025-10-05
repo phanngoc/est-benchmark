@@ -656,22 +656,19 @@ def main():
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    if st.button("📥 Export to Excel", type="secondary"):
-                        try:
-                            excel_file = st.session_state.estimation_workflow.export_results(result)
-                            if excel_file and os.path.exists(excel_file):
-                                with open(excel_file, 'rb') as f:
-                                    st.download_button(
-                                        label="⬇️ Download Excel File",
-                                        data=f.read(),
-                                        file_name=os.path.basename(excel_file),
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                    )
-                                st.success(f"✅ Excel file ready: {os.path.basename(excel_file)}")
-                            else:
-                                st.error("❌ Failed to create Excel file")
-                        except Exception as e:
-                            st.error(f"❌ Export error: {str(e)}")
+                    try:
+                        excel_file = st.session_state.estimation_workflow.export_results(result)
+                        if excel_file and os.path.exists(excel_file):
+                            with open(excel_file, 'rb') as f:
+                                st.download_button(
+                                    label="📥 Export to Excel",
+                                    data=f.read(),
+                                    file_name=os.path.basename(excel_file),
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    type="secondary"
+                                )
+                    except Exception as e:
+                        st.error(f"❌ Export error: {str(e)}")
 
                 with col2:
                     if st.button("🎨 Show Mermaid Diagram", type="secondary"):
