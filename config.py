@@ -42,6 +42,7 @@ class Config:
     # Working Directory
     WORKING_DIR = "./graphrag_workspace"
     UPLOADS_DIR = "./uploads"
+    RESULT_EST_DIR = "./result_est"  # Dedicated folder for estimation Excel files
 
     # File Metadata Configuration
     METADATA_FILE = ".metadata.json"
@@ -55,6 +56,7 @@ class Config:
     # Estimation History Configuration
     ESTIMATION_HISTORY_DB_PATH = "./estimation_history_db"
     ESTIMATION_HISTORY_COLLECTION = "estimation_history"
+    ESTIMATION_TRACKER_DB = "./estimation_tracker.db"  # SQLite database for estimation results tracking
 
     # Few-Shot Prompting Configuration
     ENABLE_FEW_SHOT_PROMPTING = True  # Enable/disable historical data usage

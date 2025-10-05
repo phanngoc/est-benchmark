@@ -17,7 +17,7 @@ import os
 import json
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Any, TypedDict, Annotated
+from typing import List, Dict, Any, TypedDict, Annotated, Tuple
 import operator
 from dataclasses import dataclass, field
 import uuid
@@ -1362,19 +1362,21 @@ graph TD
 def export_enhanced_excel(
     df: pd.DataFrame,
     validation_summary: Dict[str, Any],
+    estimation_id: str = None,
     filename: str = None,
     format: str = "enhanced",
     no: str = "001",
     version: str = "1.0",
     issue_date: str = None,
     md_per_mm: int = 20
-) -> str:
+) -> Tuple[str, str]:
     """
     Enhanced Excel export với detailed analysis.
 
     Args:
         df: DataFrame with estimation data
         validation_summary: Summary of validation results
+        estimation_id: Unique estimation identifier (auto-generated if None)
         filename: Output filename (auto-generated if None)
         format: Export format - "enhanced" (default) or "sunasterisk"
         no: Document number (for Sun Asterisk format)
@@ -1383,8 +1385,13 @@ def export_enhanced_excel(
         md_per_mm: Man-days per man-month (for Sun Asterisk format)
 
     Returns:
-        str: Path to exported Excel file
+        Tuple[str, str]: (Path to exported Excel file, estimation_id)
     """
+    from config import Config
+
+    # Generate estimation_id if not provided
+    if estimation_id is None:
+        estimation_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Handle Sun Asterisk format
     if format == "sunasterisk":
         from utils.sunasterisk_excel_exporter import export_sunasterisk_excel
@@ -1426,7 +1433,7 @@ def export_enhanced_excel(
             data.append(sunasterisk_task)
 
         # Export using Sun Asterisk exporter
-        return export_sunasterisk_excel(
+        sunasterisk_filepath = export_sunasterisk_excel(
             data=data,
             filename=filename,
             no=no,
@@ -1434,13 +1441,18 @@ def export_enhanced_excel(
             issue_date=issue_date,
             md_per_mm=md_per_mm
         )
+        return sunasterisk_filepath, estimation_id
 
     # Original enhanced format
+    # Auto-generate filename with new format if not provided
     if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"enhanced_estimation_{timestamp}.xlsx"
+        filename = f"estimation_result_{estimation_id}.xlsx"
 
-    filepath = os.path.join(os.getcwd(), filename)
+    # Ensure result_est directory exists
+    os.makedirs(Config.RESULT_EST_DIR, exist_ok=True)
+
+    # Save to result_est directory
+    filepath = os.path.join(Config.RESULT_EST_DIR, filename)
 
     try:
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
@@ -1548,12 +1560,12 @@ def export_enhanced_excel(
                 complexity_df = pd.DataFrame(complexity_data)
                 complexity_df.to_excel(writer, sheet_name='Complexity Distribution', index=False)
 
-        logger.info(f"✅ Enhanced Excel export completed: {filepath}")
-        return filepath
+        logger.info(f"✅ Enhanced Excel export completed: {filepath} (ID: {estimation_id})")
+        return filepath, estimation_id
 
     except Exception as e:
         logger.error(f"❌ Lỗi khi export Enhanced Excel: {e}")
-        return ""
+        return "", estimation_id
 
 # ========================
 # Enhanced Workflow Builder
@@ -1615,13 +1627,30 @@ class EnhancedEstimationWorkflow:
 
         logger.info("✅ Enhanced Estimation Workflow đã được build thành công!")
 
-    def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = "enhanced_estimation_thread") -> Dict[str, Any]:
+    def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = None) -> Dict[str, Any]:
         """
-        Chạy enhanced estimation workflow
+        Chạy enhanced estimation workflow với auto-generated estimation_id
+
+        Args:
+            task_description: Project description to estimate
+            graphrag_insights: Optional GraphRAG insights
+            thread_id: Optional custom thread ID (auto-generated if None)
+
+        Returns:
+            Dict with estimation results including estimation_id
         """
-        logger.info(f"🚀 Bắt đầu Enhanced Estimation Workflow cho task: {task_description}")
+        # Generate estimation_id (timestamp-based)
+        estimation_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Auto-generate thread_id if not provided
+        if thread_id is None:
+            thread_id = f"estimation_{estimation_id}"
+
+        logger.info(f"🚀 Bắt đầu Enhanced Estimation Workflow (ID: {estimation_id})")
+        logger.info(f"   Task: {task_description[:100]}...")
 
         initial_state = {
+            "estimation_id": estimation_id,  # NEW: Add estimation_id to state
             "original_task": task_description,
             "graphrag_insights": graphrag_insights or [],
             "main_categories": [],
@@ -1641,13 +1670,19 @@ class EnhancedEstimationWorkflow:
             config = {"configurable": {"thread_id": thread_id}}
             result = self.workflow.invoke(initial_state, config=config)
 
-            logger.info(f"🎉 Enhanced Workflow hoàn thành với status: {result.get('workflow_status', 'unknown')}")
+            # Ensure estimation_id is in result
+            result['estimation_id'] = estimation_id
+
+            logger.info(f"🎉 Enhanced Workflow hoàn thành (ID: {estimation_id})")
+            logger.info(f"   Status: {result.get('workflow_status', 'unknown')}")
+            logger.info(f"   Total Effort: {result.get('total_effort', 0):.1f} mandays")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ Lỗi khi chạy Enhanced Workflow: {e}")
+            logger.error(f"❌ Lỗi khi chạy Enhanced Workflow (ID: {estimation_id}): {e}")
             return {
+                "estimation_id": estimation_id,
                 "workflow_status": "failed",
                 "error": str(e)
             }
@@ -1661,9 +1696,9 @@ class EnhancedEstimationWorkflow:
         version: str = "1.0",
         issue_date: str = None,
         md_per_mm: int = 20
-    ) -> str:
+    ) -> Tuple[str, str]:
         """
-        Enhanced export kết quả ra Excel.
+        Enhanced export kết quả ra Excel với SQLite tracking.
 
         Args:
             result: Workflow result dictionary
@@ -1675,18 +1710,23 @@ class EnhancedEstimationWorkflow:
             md_per_mm: Man-days per man-month (for Sun Asterisk format)
 
         Returns:
-            str: Path to exported Excel file
+            Tuple[str, str]: (Path to exported Excel file, estimation_id)
         """
         estimation_data = result.get('final_estimation_data', [])
+        estimation_id = result.get('estimation_id', '')
+
         if not estimation_data:
             logger.warning("⚠️ Không có dữ liệu để export")
-            return ""
+            return "", estimation_id
 
         df = pd.DataFrame(estimation_data)
         validation_summary = result.get('validation_summary', {})
-        return export_enhanced_excel(
+
+        # Export to Excel
+        filepath, estimation_id = export_enhanced_excel(
             df=df,
             validation_summary=validation_summary,
+            estimation_id=estimation_id,
             filename=filename,
             format=format,
             no=no,
@@ -1694,6 +1734,40 @@ class EnhancedEstimationWorkflow:
             issue_date=issue_date,
             md_per_mm=md_per_mm
         )
+
+        # Save to SQLite tracker
+        if filepath and estimation_id:
+            try:
+                from utils.estimation_result_tracker import get_result_tracker
+
+                tracker = get_result_tracker()
+
+                # Create estimation run entry
+                tracker.create_estimation_run(
+                    estimation_id=estimation_id,
+                    file_path=filepath,
+                    summary_data={
+                        'total_effort': result.get('total_effort', 0.0),
+                        'total_tasks': len(estimation_data),
+                        'average_confidence': result.get('total_confidence', 0.0),
+                        'workflow_status': result.get('workflow_status', 'completed'),
+                        'project_description': result.get('original_task', '')
+                    }
+                )
+
+                # Save task details
+                saved_count = tracker.save_estimation_tasks(
+                    estimation_id=estimation_id,
+                    tasks_data=estimation_data
+                )
+
+                logger.info(f"✅ Estimation {estimation_id} tracked in SQLite database ({saved_count} tasks)")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to save to SQLite tracker: {e}")
+                # Continue even if tracking fails - Excel export is still successful
+
+        return filepath, estimation_id
 
     def get_mermaid_diagram(self, result: Dict[str, Any]) -> str:
         """

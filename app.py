@@ -341,7 +341,7 @@ def main():
         st.rerun()
 
     # Main content area
-    tab1, tab2, tab3 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
@@ -657,8 +657,9 @@ def main():
 
                 with col1:
                     try:
-                        excel_file = st.session_state.estimation_workflow.export_results(result)
+                        excel_file, estimation_id = st.session_state.estimation_workflow.export_results(result)
                         if excel_file and os.path.exists(excel_file):
+                            st.info(f"📋 Estimation ID: `{estimation_id}`")
                             with open(excel_file, 'rb') as f:
                                 st.download_button(
                                     label="📥 Export to Excel",
@@ -683,6 +684,132 @@ def main():
                     if st.button("🗑️ Clear Results", type="secondary"):
                         st.session_state.project_estimation_result = None
                         st.rerun()
+
+    with tab4:
+        st.header("📚 Estimation History")
+
+        try:
+            from utils.estimation_result_tracker import get_result_tracker
+
+            tracker = get_result_tracker()
+
+            # Get statistics
+            stats = tracker.get_statistics()
+
+            # Display summary statistics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Estimations", stats['total_estimations'])
+            with col2:
+                st.metric("Total Tasks", stats['total_tasks'])
+            with col3:
+                st.metric("Avg Effort", f"{stats['avg_effort']:.1f} days")
+            with col4:
+                st.metric("Avg Confidence", f"{stats['avg_confidence']:.0%}")
+
+            st.divider()
+
+            # List all estimations
+            estimations = tracker.list_all_estimations(limit=50)
+
+            if estimations:
+                st.subheader("📋 Recent Estimations")
+
+                # Create DataFrame for display
+                df_history = pd.DataFrame(estimations)
+
+                # Select and rename columns for display
+                display_columns = ['estimation_id', 'created_at', 'total_tasks', 'total_effort',
+                                  'average_confidence', 'workflow_status']
+
+                if all(col in df_history.columns for col in display_columns):
+                    display_df = df_history[display_columns].copy()
+                    display_df.columns = ['Estimation ID', 'Created At', 'Tasks',
+                                         'Effort (days)', 'Confidence', 'Status']
+
+                    # Format columns
+                    display_df['Effort (days)'] = display_df['Effort (days)'].round(1)
+                    display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
+
+                    st.dataframe(display_df, use_container_width=True, height=300)
+                else:
+                    st.dataframe(df_history, use_container_width=True, height=300)
+
+                st.divider()
+
+                # Detail view with file download
+                st.subheader("🔍 Estimation Details")
+
+                # Select estimation
+                selected_id = st.selectbox(
+                    "Select Estimation ID to view details",
+                    options=[e['estimation_id'] for e in estimations],
+                    key="history_select"
+                )
+
+                if selected_id:
+                    detail = tracker.get_estimation_by_id(selected_id)
+                    tasks = tracker.get_estimation_tasks(selected_id)
+
+                    if detail:
+                        # Display run metadata
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown(f"**Estimation ID:** `{detail['estimation_id']}`")
+                            st.markdown(f"**Created At:** {detail['created_at']}")
+                            st.markdown(f"**Status:** {detail['workflow_status']}")
+                            st.markdown(f"**Total Tasks:** {detail['total_tasks']}")
+
+                        with col2:
+                            st.markdown(f"**Total Effort:** {detail['total_effort']:.1f} mandays")
+                            st.markdown(f"**Avg Confidence:** {detail['average_confidence']:.0%}")
+                            st.markdown(f"**File Path:** `{detail['file_path']}`")
+
+                        # Project description
+                        if detail.get('project_description'):
+                            with st.expander("📄 Project Description", expanded=False):
+                                st.text(detail['project_description'])
+
+                        # Download Excel file
+                        if detail['file_path'] and os.path.exists(detail['file_path']):
+                            with open(detail['file_path'], 'rb') as f:
+                                st.download_button(
+                                    label="📥 Download Excel File",
+                                    data=f.read(),
+                                    file_name=os.path.basename(detail['file_path']),
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key=f"download_{selected_id}"
+                                )
+                        else:
+                            st.warning(f"⚠️ Excel file not found: {detail['file_path']}")
+
+                        # Display tasks
+                        if tasks:
+                            st.subheader(f"📋 Tasks ({len(tasks)} total)")
+
+                            df_tasks = pd.DataFrame(tasks)
+
+                            # Select relevant columns for display
+                            task_display_columns = ['id', 'category', 'role', 'parent_task', 'sub_task',
+                                                   'estimation_manday', 'confidence_level', 'complexity']
+
+                            existing_task_columns = [col for col in task_display_columns if col in df_tasks.columns]
+
+                            if existing_task_columns:
+                                st.dataframe(df_tasks[existing_task_columns], use_container_width=True, height=400)
+                            else:
+                                st.dataframe(df_tasks, use_container_width=True, height=400)
+                        else:
+                            st.info("No task details found for this estimation")
+                    else:
+                        st.warning(f"⚠️ Estimation {selected_id} not found in database")
+            else:
+                st.info("📭 No estimation history yet. Run your first project estimation to see it here!")
+
+        except Exception as e:
+            st.error(f"❌ Error loading estimation history: {str(e)}")
+            logger.exception(f"Estimation history tab error: {e}")
 
 if __name__ == "__main__":
     main()
