@@ -826,16 +826,6 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
             logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} → {buffered_total:.1f} mandays (Buffer: {buffer_info['buffer_percentage']*100:.0f}%, Role: {task_breakdown.get('role', 'Unknown')})")
 
-            # NEW: Save successful estimation to history for future reference
-            try:
-                history_manager.save_estimation(
-                    estimated_task,
-                    project_name="current_estimation"
-                )
-                logger.debug(f"   💾 Saved to estimation history")
-            except Exception as e:
-                logger.warning(f"   ⚠️ Could not save to history: {e}")
-
             return {
                 'estimation_results': [estimated_task]
             }

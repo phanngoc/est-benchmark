@@ -341,7 +341,7 @@ def main():
         st.rerun()
 
     # Main content area
-    tab1, tab2, tab3, tab4 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History", "📊 Master Data Management"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
@@ -810,6 +810,463 @@ def main():
         except Exception as e:
             st.error(f"❌ Error loading estimation history: {str(e)}")
             logger.exception(f"Estimation history tab error: {e}")
+
+    with tab5:
+        st.header("📊 Master Data Management")
+
+        try:
+            from utils.estimation_history_manager import get_history_manager
+
+            history_manager = get_history_manager()
+
+            # Section 1: CSV Import/Export (3-column layout for better UX)
+            st.subheader("📥 CSV Operations")
+
+            col1, col2, col3 = st.columns(3)
+
+            # Column 1: Import CSV
+            with col1:
+                st.markdown("### 📥 Import CSV")
+                uploaded_csv = st.file_uploader(
+                    "Upload CSV File",
+                    type=['csv'],
+                    help="Upload CSV file with estimation master data",
+                    key="master_data_csv_upload"
+                )
+
+                if uploaded_csv:
+                    # Validate CSV
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                        tmp_file.write(uploaded_csv.getvalue())
+                        tmp_path = tmp_file.name
+
+                    is_valid, error_msg = history_manager.validate_csv_format(tmp_path)
+
+                    if is_valid:
+                        st.success(f"✅ Valid")
+
+                        if st.button("📥 Import", type="primary", use_container_width=True):
+                            with st.spinner("Importing..."):
+                                try:
+                                    count = history_manager.import_from_csv(tmp_path)
+                                    st.success(f"✅ Imported {count} tasks!")
+                                    os.unlink(tmp_path)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ {str(e)}")
+                    else:
+                        st.error(f"❌ {error_msg}")
+
+                    # Clean up temp file
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+
+            # Column 2: Export CSV
+            with col2:
+                st.markdown("### 📤 Export CSV")
+                st.caption("Export all master data to CSV file")
+
+                export_filename = st.text_input(
+                    "Filename",
+                    value=f"master_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    key="export_filename",
+                    label_visibility="collapsed"
+                )
+
+                if st.button("📤 Export", use_container_width=True):
+                    try:
+                        export_path = os.path.join(Config.RESULT_EST_DIR, export_filename)
+                        os.makedirs(Config.RESULT_EST_DIR, exist_ok=True)
+
+                        filepath = history_manager.export_to_csv(export_path)
+
+                        # Download button
+                        with open(filepath, 'rb') as f:
+                            st.download_button(
+                                label="📥 Download",
+                                data=f.read(),
+                                file_name=export_filename,
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+                    except Exception as e:
+                        st.error(f"❌ {str(e)}")
+
+            # Column 3: CSV Template
+            with col3:
+                st.markdown("### 📋 CSV Template")
+                st.caption("Download template with sample data")
+
+                template_path = "./master_data_template.csv"
+                if os.path.exists(template_path):
+                    with open(template_path, 'rb') as f:
+                        st.download_button(
+                            label="📥 Download Template",
+                            data=f.read(),
+                            file_name="master_data_template.csv",
+                            mime="text/csv",
+                            help="CSV template with example estimation data",
+                            use_container_width=True
+                        )
+                else:
+                    st.warning("Template not found")
+
+            st.divider()
+
+            # Section 2: Task List with Filters
+            st.subheader("📋 Task List")
+
+            # Get statistics first
+            stats = history_manager.get_statistics()
+
+            # Filters
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                # Get unique categories
+                all_tasks = history_manager.get_all_tasks_paginated(limit=1000)
+                categories = sorted(list(set(task.get('_metadata', {}).get('category', 'Unknown') for task in all_tasks)))
+                filter_category = st.selectbox(
+                    "Category",
+                    options=["All"] + categories,
+                    key="filter_category"
+                )
+
+            with col2:
+                filter_role = st.selectbox(
+                    "Role",
+                    options=["All", "Backend", "Frontend", "Testing", "Infra"],
+                    key="filter_role"
+                )
+
+            with col3:
+                filter_complexity = st.selectbox(
+                    "Complexity",
+                    options=["All", "Low", "Medium", "High"],
+                    key="filter_complexity"
+                )
+
+            with col4:
+                # Get unique project names
+                projects = sorted(list(set(task.get('_metadata', {}).get('project_name', 'Unknown') for task in all_tasks)))
+                filter_project = st.selectbox(
+                    "Project",
+                    options=["All"] + projects,
+                    key="filter_project"
+                )
+
+            # Apply filters
+            filter_kwargs = {}
+            if filter_category != "All":
+                filter_kwargs['category'] = filter_category
+            if filter_role != "All":
+                filter_kwargs['role'] = filter_role
+            if filter_complexity != "All":
+                filter_kwargs['complexity'] = filter_complexity
+            if filter_project != "All":
+                filter_kwargs['project_name'] = filter_project
+
+            if filter_kwargs:
+                filtered_tasks = history_manager.filter_by_criteria(**filter_kwargs)
+            else:
+                filtered_tasks = all_tasks
+
+            # Display table with detailed estimation breakdown
+            if filtered_tasks:
+                st.markdown(f"**Found {len(filtered_tasks)} tasks**")
+
+                # Prepare DataFrame with detailed estimation columns
+                display_data = []
+                for task in filtered_tasks:
+                    metadata = task.get('_metadata', {})
+                    display_data.append({
+                        'ID': task.get('_id', '')[:8] + '...',
+                        'Category': metadata.get('category', ''),
+                        'Role': metadata.get('role', ''),
+                        'Parent Task': task.get('parent_task', ''),
+                        'Sub Task': task.get('sub_task', ''),
+                        'Total': f"{metadata.get('estimation_manday', 0):.1f}",
+                        'BE Impl': f"{metadata.get('backend_implement', 0):.1f}",
+                        'BE Fix': f"{metadata.get('backend_fixbug', 0):.1f}",
+                        'BE Test': f"{metadata.get('backend_unittest', 0):.1f}",
+                        'FE Impl': f"{metadata.get('frontend_implement', 0):.1f}",
+                        'FE Fix': f"{metadata.get('frontend_fixbug', 0):.1f}",
+                        'FE Test': f"{metadata.get('frontend_unittest', 0):.1f}",
+                        'Responsive': f"{metadata.get('responsive_implement', 0):.1f}",
+                        'Testing': f"{metadata.get('testing_implement', 0):.1f}",
+                        'Complexity': metadata.get('complexity', ''),
+                        'Confidence': f"{metadata.get('confidence_level', 0):.0%}",
+                        'Project': metadata.get('project_name', ''),
+                        '_task_id': task.get('_id', '')
+                    })
+
+                df_display = pd.DataFrame(display_data)
+
+                # Display with horizontal scroll for detailed view
+                st.dataframe(
+                    df_display.drop('_task_id', axis=1),
+                    use_container_width=True,
+                    height=400
+                )
+
+                # Action buttons
+                st.markdown("### 🔧 Actions")
+                selected_task_id = st.selectbox(
+                    "Select task for action",
+                    options=[t['_id'] for t in filtered_tasks],
+                    format_func=lambda x: f"{x[:8]}... - {next((t.get('sub_task', 'Unknown') for t in filtered_tasks if t.get('_id') == x), 'Unknown')}",
+                    key="selected_task_action"
+                )
+
+                col_edit, col_delete = st.columns(2)
+
+                with col_edit:
+                    if st.button("✏️ Edit Task", use_container_width=True):
+                        st.session_state['editing_task_id'] = selected_task_id
+                        st.rerun()
+
+                with col_delete:
+                    if st.button("🗑️ Delete Task", use_container_width=True, type="secondary"):
+                        if history_manager.delete_task(selected_task_id):
+                            st.success(f"✅ Deleted task: {selected_task_id}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete task")
+            else:
+                st.info("📭 No tasks found. Import CSV or add tasks manually.")
+
+            st.divider()
+
+            # Section 3: Add/Edit Task Form
+            if st.session_state.get('editing_task_id'):
+                st.subheader("✏️ Edit Task")
+                task_to_edit = history_manager.get_task_by_id(st.session_state['editing_task_id'])
+
+                if task_to_edit:
+                    form_data = {
+                        'id': st.session_state['editing_task_id'],
+                        'category': task_to_edit.get('category', ''),
+                        'role': task_to_edit.get('_metadata', {}).get('role', 'Backend'),
+                        'parent_task': task_to_edit.get('parent_task', ''),
+                        'sub_task': task_to_edit.get('sub_task', ''),
+                        'description': task_to_edit.get('description', ''),
+                        'complexity': task_to_edit.get('_metadata', {}).get('complexity', 'Medium'),
+                        'priority': task_to_edit.get('_metadata', {}).get('priority', 'Medium'),
+                        'estimation_manday': task_to_edit.get('_metadata', {}).get('estimation_manday', 0.0),
+                        'backend_implement': task_to_edit.get('_metadata', {}).get('backend_implement', 0.0),
+                        'backend_fixbug': task_to_edit.get('_metadata', {}).get('backend_fixbug', 0.0),
+                        'backend_unittest': task_to_edit.get('_metadata', {}).get('backend_unittest', 0.0),
+                        'frontend_implement': task_to_edit.get('_metadata', {}).get('frontend_implement', 0.0),
+                        'frontend_fixbug': task_to_edit.get('_metadata', {}).get('frontend_fixbug', 0.0),
+                        'frontend_unittest': task_to_edit.get('_metadata', {}).get('frontend_unittest', 0.0),
+                        'responsive_implement': task_to_edit.get('_metadata', {}).get('responsive_implement', 0.0),
+                        'testing_implement': task_to_edit.get('_metadata', {}).get('testing_implement', 0.0),
+                        'confidence_level': task_to_edit.get('_metadata', {}).get('confidence_level', 0.8),
+                        'validated': task_to_edit.get('_metadata', {}).get('validated', False),
+                        'project_name': task_to_edit.get('_metadata', {}).get('project_name', '')
+                    }
+                else:
+                    st.error("Task not found")
+                    st.session_state.pop('editing_task_id')
+                    st.rerun()
+            else:
+                st.subheader("➕ Add New Task")
+                form_data = {
+                    'id': None,
+                    'category': '',
+                    'role': 'Backend',
+                    'parent_task': '',
+                    'sub_task': '',
+                    'description': '',
+                    'complexity': 'Medium',
+                    'priority': 'Medium',
+                    'estimation_manday': 0.0,
+                    'backend_implement': 0.0,
+                    'backend_fixbug': 0.0,
+                    'backend_unittest': 0.0,
+                    'frontend_implement': 0.0,
+                    'frontend_fixbug': 0.0,
+                    'frontend_unittest': 0.0,
+                    'responsive_implement': 0.0,
+                    'testing_implement': 0.0,
+                    'confidence_level': 0.8,
+                    'validated': False,
+                    'project_name': ''
+                }
+
+            with st.form("task_form"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    category = st.text_input("Category *", value=form_data['category'])
+
+                    # Handle role with safe index lookup (support both QA and Testing)
+                    role_options = ["Backend", "Frontend", "Testing", "Infra"]
+                    current_role = form_data['role']
+                    # Convert QA to Testing for compatibility
+                    if current_role == 'QA':
+                        current_role = 'Testing'
+                    try:
+                        role_index = role_options.index(current_role)
+                    except ValueError:
+                        role_index = 0  # Default to Backend if role not found
+
+                    role = st.selectbox("Role *", role_options, index=role_index)
+                    parent_task = st.text_input("Parent Task", value=form_data['parent_task'])
+                    sub_task = st.text_input("Sub Task *", value=form_data['sub_task'])
+                    description = st.text_area("Description *", value=form_data['description'], height=100)
+
+                with col2:
+                    complexity = st.selectbox("Complexity", ["Low", "Medium", "High"],
+                                            index=["Low", "Medium", "High"].index(form_data['complexity']))
+                    priority = st.selectbox("Priority", ["Low", "Medium", "High"],
+                                           index=["Low", "Medium", "High"].index(form_data['priority']))
+                    project_name = st.text_input("Project Name", value=form_data['project_name'])
+                    confidence_level = st.slider("Confidence Level", 0.0, 1.0, form_data['confidence_level'], 0.05)
+                    validated = st.checkbox("Validated", value=form_data['validated'])
+
+                st.markdown("### Effort Breakdown (mandays)")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown("**Backend**")
+                    backend_implement = st.number_input("Implement", value=form_data['backend_implement'],
+                                                       min_value=0.0, step=0.1, format="%.1f", key="backend_impl")
+                    backend_fixbug = st.number_input("Fix Bug", value=form_data['backend_fixbug'],
+                                                    min_value=0.0, step=0.1, format="%.1f", key="backend_fix")
+                    backend_unittest = st.number_input("Unit Test", value=form_data['backend_unittest'],
+                                                      min_value=0.0, step=0.1, format="%.1f", key="backend_test")
+
+                with col2:
+                    st.markdown("**Frontend**")
+                    frontend_implement = st.number_input("Implement", value=form_data['frontend_implement'],
+                                                        min_value=0.0, step=0.1, format="%.1f", key="frontend_impl")
+                    frontend_fixbug = st.number_input("Fix Bug", value=form_data['frontend_fixbug'],
+                                                     min_value=0.0, step=0.1, format="%.1f", key="frontend_fix")
+                    frontend_unittest = st.number_input("Unit Test", value=form_data['frontend_unittest'],
+                                                       min_value=0.0, step=0.1, format="%.1f", key="frontend_test")
+
+                with col3:
+                    st.markdown("**Other**")
+                    responsive_implement = st.number_input("Responsive", value=form_data['responsive_implement'],
+                                                          min_value=0.0, step=0.1, format="%.1f", key="responsive")
+                    testing_implement = st.number_input("Testing", value=form_data['testing_implement'],
+                                                       min_value=0.0, step=0.1, format="%.1f", key="testing")
+
+                # Calculate total
+                total_estimation = (backend_implement + backend_fixbug + backend_unittest +
+                                  frontend_implement + frontend_fixbug + frontend_unittest +
+                                  responsive_implement + testing_implement)
+
+                st.markdown(f"**Total Estimation:** {total_estimation:.1f} mandays")
+
+                # Form buttons
+                col_save, col_cancel = st.columns([1, 1])
+
+                with col_save:
+                    submitted = st.form_submit_button("💾 Save Task", type="primary", use_container_width=True)
+
+                with col_cancel:
+                    cancel = st.form_submit_button("❌ Cancel", use_container_width=True)
+
+            # Handle form submission OUTSIDE the form block
+            if submitted:
+                # Validate required fields
+                if not category or not sub_task or not description:
+                    st.error("❌ Please fill in all required fields (Category, Sub Task, Description)")
+                else:
+                    # Prepare task data
+                    task_data = {
+                        'category': category,
+                        'role': role,
+                        'parent_task': parent_task,
+                        'sub_task': sub_task,
+                        'description': description,
+                        'complexity': complexity,
+                        'priority': priority,
+                        'estimation_manday': total_estimation,
+                        'backend_implement': backend_implement,
+                        'backend_fixbug': backend_fixbug,
+                        'backend_unittest': backend_unittest,
+                        'frontend_implement': frontend_implement,
+                        'frontend_fixbug': frontend_fixbug,
+                        'frontend_unittest': frontend_unittest,
+                        'responsive_implement': responsive_implement,
+                        'testing_implement': testing_implement,
+                        'confidence_level': confidence_level,
+                        'validated': validated,
+                        'project_name': project_name or 'manual_entry'
+                    }
+
+                    try:
+                        if form_data['id']:
+                            # Update existing task
+                            success = history_manager.update_task(form_data['id'], task_data)
+                            if success:
+                                st.success(f"✅ Task updated successfully!")
+                                st.session_state.pop('editing_task_id', None)
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to update task")
+                        else:
+                            # Add new task
+                            task_id = history_manager.save_estimation(task_data, project_name=project_name or 'manual_entry')
+                            st.success(f"✅ Task added successfully! ID: {task_id}")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error saving task: {str(e)}")
+
+            if cancel:
+                st.session_state.pop('editing_task_id', None)
+                st.rerun()
+
+            st.divider()
+
+            # Section 4: Statistics Dashboard
+            st.subheader("📊 Statistics")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric("Total Tasks", stats['total_tasks'])
+
+            with col2:
+                st.metric("Avg Estimation", f"{stats['avg_estimation']:.1f} days")
+
+            with col3:
+                st.metric("Avg Confidence", f"{stats['avg_confidence']:.0%}")
+
+            with col4:
+                st.metric("Categories", len(stats.get('by_category', {})))
+
+            # Charts
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if stats.get('by_role'):
+                    st.markdown("**Distribution by Role**")
+                    role_df = pd.DataFrame(list(stats['by_role'].items()), columns=['Role', 'Count'])
+                    st.bar_chart(role_df.set_index('Role'))
+
+            with col2:
+                if stats.get('by_category'):
+                    st.markdown("**Distribution by Category**")
+                    # Limit to top 10 categories
+                    cat_items = sorted(stats['by_category'].items(), key=lambda x: x[1], reverse=True)[:10]
+                    cat_df = pd.DataFrame(cat_items, columns=['Category', 'Count'])
+                    st.bar_chart(cat_df.set_index('Category'))
+
+            with col3:
+                if stats.get('by_complexity'):
+                    st.markdown("**Distribution by Complexity**")
+                    comp_df = pd.DataFrame(list(stats['by_complexity'].items()), columns=['Complexity', 'Count'])
+                    st.bar_chart(comp_df.set_index('Complexity'))
+
+        except Exception as e:
+            st.error(f"❌ Error in Master Data Management: {str(e)}")
+            logger.exception(f"Master Data Management error: {e}")
 
 if __name__ == "__main__":
     main()

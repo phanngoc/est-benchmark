@@ -362,6 +362,332 @@ class EstimationHistoryManager:
             metadata={"description": "Task estimation history with embeddings"}
         )
 
+    # ========================
+    # CSV Import/Export Methods
+    # ========================
+
+    def import_from_csv(self, csv_path: str) -> int:
+        """
+        Import tasks from CSV file
+
+        Args:
+            csv_path: Path to CSV file
+
+        Returns:
+            Number of tasks imported
+        """
+        import pandas as pd
+
+        try:
+            # Read CSV
+            df = pd.read_csv(csv_path)
+
+            # Validate required columns
+            required_cols = ['category', 'role', 'sub_task', 'description', 'estimation_manday']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+
+            # Convert to task dicts
+            tasks = []
+            for _, row in df.iterrows():
+                task = row.to_dict()
+
+                # Handle NaN values
+                task = {k: (v if pd.notna(v) else '') for k, v in task.items()}
+
+                # Ensure numeric fields are floats
+                numeric_fields = [
+                    'estimation_manday', 'backend_implement', 'backend_fixbug', 'backend_unittest',
+                    'frontend_implement', 'frontend_fixbug', 'frontend_unittest',
+                    'responsive_implement', 'testing_implement', 'confidence_level'
+                ]
+                for field in numeric_fields:
+                    if field in task:
+                        try:
+                            task[field] = float(task[field]) if task[field] else 0.0
+                        except (ValueError, TypeError):
+                            task[field] = 0.0
+
+                tasks.append(task)
+
+            # Batch save with project name from CSV or default
+            project_name = tasks[0].get('project_name', 'imported') if tasks else 'imported'
+            task_ids = self.batch_save(tasks, project_name=project_name)
+
+            return len(task_ids)
+
+        except Exception as e:
+            raise ValueError(f"Failed to import CSV: {e}")
+
+    def export_to_csv(self, filepath: str) -> str:
+        """
+        Export all tasks to CSV file
+
+        Args:
+            filepath: Path to output CSV file
+
+        Returns:
+            Path to exported file
+        """
+        import pandas as pd
+
+        try:
+            # Get all tasks
+            all_data = self.collection.get()
+
+            if not all_data['documents']:
+                raise ValueError("No tasks to export")
+
+            # Parse to list of dicts
+            tasks = []
+            for i, doc in enumerate(all_data['documents']):
+                task = json.loads(doc)
+                # Merge with metadata
+                metadata = all_data['metadatas'][i]
+                task.update(metadata)
+                tasks.append(task)
+
+            # Create DataFrame
+            df = pd.DataFrame(tasks)
+
+            # Reorder columns for better readability
+            column_order = [
+                'id', 'category', 'role', 'parent_task', 'sub_task', 'description',
+                'complexity', 'priority', 'estimation_manday',
+                'backend_implement', 'backend_fixbug', 'backend_unittest',
+                'frontend_implement', 'frontend_fixbug', 'frontend_unittest',
+                'responsive_implement', 'testing_implement',
+                'confidence_level', 'validated', 'project_name', 'created_at'
+            ]
+
+            # Only include columns that exist
+            existing_cols = [col for col in column_order if col in df.columns]
+            df = df[existing_cols]
+
+            # Export to CSV
+            df.to_csv(filepath, index=False)
+
+            return filepath
+
+        except Exception as e:
+            raise ValueError(f"Failed to export CSV: {e}")
+
+    def validate_csv_format(self, csv_path: str) -> Tuple[bool, str]:
+        """
+        Validate CSV file format
+
+        Args:
+            csv_path: Path to CSV file
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        import pandas as pd
+
+        try:
+            df = pd.read_csv(csv_path)
+
+            # Check required columns
+            required_cols = ['category', 'role', 'sub_task', 'description', 'estimation_manday']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+
+            if missing_cols:
+                return False, f"Missing required columns: {', '.join(missing_cols)}"
+
+            # Check if file is empty
+            if len(df) == 0:
+                return False, "CSV file is empty"
+
+            # Validate estimation_manday is numeric
+            try:
+                pd.to_numeric(df['estimation_manday'], errors='coerce')
+            except:
+                return False, "estimation_manday column must contain numeric values"
+
+            return True, "CSV format is valid"
+
+        except Exception as e:
+            return False, f"Failed to read CSV: {e}"
+
+    # ========================
+    # CRUD Operations
+    # ========================
+
+    def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get single task by ID
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            Task dictionary or None if not found
+        """
+        try:
+            result = self.collection.get(ids=[task_id])
+
+            if result['documents'] and len(result['documents']) > 0:
+                task = json.loads(result['documents'][0])
+                # Merge with metadata
+                task['_metadata'] = result['metadatas'][0]
+                return task
+            else:
+                return None
+
+        except Exception as e:
+            return None
+
+    def update_task(self, task_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Update existing task
+
+        Args:
+            task_id: Task ID to update
+            updates: Dictionary with fields to update
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Get existing task
+            existing_task = self.get_task_by_id(task_id)
+
+            if not existing_task:
+                return False
+
+            # Merge updates
+            existing_task.update(updates)
+
+            # Remove metadata field if present
+            existing_task.pop('_metadata', None)
+
+            # Delete old version
+            self.collection.delete(ids=[task_id])
+
+            # Re-save with same ID
+            project_name = updates.get('project_name', existing_task.get('project_name', 'updated'))
+            self.save_estimation(existing_task, project_name=project_name, task_id=task_id)
+
+            return True
+
+        except Exception as e:
+            return False
+
+    def delete_task(self, task_id: str) -> bool:
+        """
+        Delete task by ID
+
+        Args:
+            task_id: Task ID to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.collection.delete(ids=[task_id])
+            return True
+        except Exception as e:
+            return False
+
+    def get_all_tasks_paginated(
+        self,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all tasks with pagination
+
+        Args:
+            limit: Maximum number of tasks to return
+            offset: Number of tasks to skip
+
+        Returns:
+            List of task dictionaries
+        """
+        try:
+            # Get all data (ChromaDB doesn't support offset directly)
+            all_data = self.collection.get()
+
+            if not all_data['documents']:
+                return []
+
+            # Parse tasks
+            tasks = []
+            for i, doc in enumerate(all_data['documents']):
+                task = json.loads(doc)
+                task['_metadata'] = all_data['metadatas'][i]
+                task['_id'] = all_data['ids'][i]
+                tasks.append(task)
+
+            # Apply pagination
+            start = offset
+            end = offset + limit
+
+            return tasks[start:end]
+
+        except Exception as e:
+            return []
+
+    def filter_by_criteria(
+        self,
+        category: Optional[str] = None,
+        role: Optional[str] = None,
+        complexity: Optional[str] = None,
+        project_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Filter tasks by multiple criteria
+
+        Args:
+            category: Filter by category
+            role: Filter by role
+            complexity: Filter by complexity
+            project_name: Filter by project name
+
+        Returns:
+            List of matching task dictionaries
+        """
+        # Build where filter
+        where_conditions = []
+
+        if category:
+            where_conditions.append({'category': category})
+        if role:
+            where_conditions.append({'role': role})
+        if complexity:
+            where_conditions.append({'complexity': complexity})
+        if project_name:
+            where_conditions.append({'project_name': project_name})
+
+        # Use $and operator for multiple conditions
+        where_filter = None
+        if len(where_conditions) == 1:
+            where_filter = where_conditions[0]
+        elif len(where_conditions) > 1:
+            where_filter = {'$and': where_conditions}
+
+        try:
+            if where_filter:
+                result = self.collection.get(where=where_filter)
+            else:
+                result = self.collection.get()
+
+            # Parse results
+            tasks = []
+            if result['documents']:
+                for i, doc in enumerate(result['documents']):
+                    task = json.loads(doc)
+                    task['_metadata'] = result['metadatas'][i]
+                    task['_id'] = result['ids'][i]
+                    tasks.append(task)
+
+            return tasks
+
+        except Exception as e:
+            return []
+
 
 # Singleton instance
 _history_manager_instance = None
