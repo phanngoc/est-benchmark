@@ -76,22 +76,21 @@ class EstimationHistoryManager:
             'complexity': task.get('complexity', 'Medium'),
             'priority': task.get('priority', 'Medium'),
             'estimation_manday': float(task.get('estimation_manday', 0.0)),
-            'estimation_backend_manday': float(task.get('estimation_backend_manday', 0.0)),
-            'estimation_frontend_manday': float(task.get('estimation_frontend_manday', 0.0)),
-            'estimation_qa_manday': float(task.get('estimation_qa_manday', 0.0)),
-            'estimation_infra_manday': float(task.get('estimation_infra_manday', 0.0)),
+            
+            # Detailed effort breakdown by task type per role (matching workflow.py)
+            'backend_implement': float(task.get('backend_implement', 0.0)),
+            'backend_fixbug': float(task.get('backend_fixbug', 0.0)),
+            'backend_unittest': float(task.get('backend_unittest', 0.0)),
+            'frontend_implement': float(task.get('frontend_implement', 0.0)),
+            'frontend_fixbug': float(task.get('frontend_fixbug', 0.0)),
+            'frontend_unittest': float(task.get('frontend_unittest', 0.0)),
+            'responsive_implement': float(task.get('responsive_implement', 0.0)),
+            'testing_implement': float(task.get('testing_implement', 0.0)),
+            
             'confidence_level': float(task.get('confidence_level', 0.7)),
             'created_at': datetime.now().isoformat(),
             'validated': task.get('validated', False)
         }
-
-        # Store complex fields as JSON strings
-        if task.get('dependencies'):
-            metadata['dependencies_json'] = json.dumps(task['dependencies'])
-        if task.get('risk_factors'):
-            metadata['risk_factors_json'] = json.dumps(task['risk_factors'])
-        if task.get('assumptions'):
-            metadata['assumptions_json'] = json.dumps(task['assumptions'])
 
         return metadata
 
@@ -283,15 +282,19 @@ class EstimationHistoryManager:
             prompt_parts.append(f"- Complexity: {task.get('complexity', 'N/A')}")
             prompt_parts.append(f"- **Estimated Effort**: {task.get('estimation_manday', 0):.1f} mandays total")
 
-            # Show role-specific breakdown
-            if task.get('estimation_backend_manday', 0) > 0:
-                prompt_parts.append(f"  - Backend: {task.get('estimation_backend_manday', 0):.1f} mandays")
-            if task.get('estimation_frontend_manday', 0) > 0:
-                prompt_parts.append(f"  - Frontend: {task.get('estimation_frontend_manday', 0):.1f} mandays")
-            if task.get('estimation_qa_manday', 0) > 0:
-                prompt_parts.append(f"  - QA: {task.get('estimation_qa_manday', 0):.1f} mandays")
-            if task.get('estimation_infra_manday', 0) > 0:
-                prompt_parts.append(f"  - Infra: {task.get('estimation_infra_manday', 0):.1f} mandays")
+            # Show detailed task type breakdown per role
+            backend_total = task.get('backend_implement', 0) + task.get('backend_fixbug', 0) + task.get('backend_unittest', 0)
+            if backend_total > 0:
+                prompt_parts.append(f"  - Backend: {backend_total:.1f} mandays (Impl: {task.get('backend_implement', 0):.1f}, Fix: {task.get('backend_fixbug', 0):.1f}, Test: {task.get('backend_unittest', 0):.1f})")
+            
+            frontend_total = task.get('frontend_implement', 0) + task.get('frontend_fixbug', 0) + task.get('frontend_unittest', 0)
+            if frontend_total > 0:
+                prompt_parts.append(f"  - Frontend: {frontend_total:.1f} mandays (Impl: {task.get('frontend_implement', 0):.1f}, Fix: {task.get('frontend_fixbug', 0):.1f}, Test: {task.get('frontend_unittest', 0):.1f})")
+            
+            if task.get('responsive_implement', 0) > 0:
+                prompt_parts.append(f"  - Responsive: {task.get('responsive_implement', 0):.1f} mandays")
+            if task.get('testing_implement', 0) > 0:
+                prompt_parts.append(f"  - Testing: {task.get('testing_implement', 0):.1f} mandays")
 
             prompt_parts.append(f"- Confidence: {task.get('confidence_level', 0.7):.2f}")
 
