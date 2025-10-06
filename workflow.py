@@ -69,7 +69,7 @@ class TaskBreakdown:
     frontend_fixbug: float = 0.0
     frontend_unittest: float = 0.0
     responsive_implement: float = 0.0
-    qa_implement: float = 0.0
+    testing_implement: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -96,7 +96,7 @@ class TaskBreakdown:
             'frontend_fixbug': self.frontend_fixbug,
             'frontend_unittest': self.frontend_unittest,
             'responsive_implement': self.responsive_implement,
-            'qa_implement': self.qa_implement
+            'testing_implement': self.testing_implement
         }
 
     def to_sunasterisk_format(self) -> Dict[str, Any]:
@@ -122,8 +122,8 @@ class TaskBreakdown:
             'responsive': {
                 'implement': self.responsive_implement
             },
-            'qa': {
-                'implement': self.qa_implement
+            'testing': {
+                'implement': self.testing_implement
             },
             'note': self.note
         }
@@ -260,14 +260,14 @@ class EnhancedEstimationLLM:
         - Task phải đủ NHỎ để 1 developer hoàn thành trong <3 ngày làm việc
         - Xem xét dependencies giữa các task
         - Ưu tiên các task critical path
-        - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, QA, hoặc Infra)
+        - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, Testing, hoặc Infra)
         - NẾU TASK QUÁ LỚN: Chia thành các bước nhỏ hơn với dependencies rõ ràng
         - VALIDATION: Trước khi trả về, kiểm tra lại TẤT CẢ tasks đều <2.5 mandays
 
         Role definitions:
         - Backend: API development, business logic, database operations, server-side processing
         - Frontend: UI components, user interactions, client-side logic, responsive design
-        - QA: Testing (unit, integration, E2E), test automation, quality assurance
+        - Testing: Testing (unit, integration, E2E), test automation, quality assurance
         - Infra: DevOps, deployment, CI/CD, monitoring, infrastructure setup
 
         Trả về kết quả dưới dạng JSON với format:
@@ -277,7 +277,7 @@ class EnhancedEstimationLLM:
                     "id": "unique_id",
                     "category": "category_name",
                     "sub_no": "1.1",
-                    "role": "Backend|Frontend|QA|Infra",
+                    "role": "Backend|Frontend|Testing|Infra",
                     "parent_task": "Parent Task Name",
                     "sub_task": "Specific Sub Task",
                     "feature": "Screen/Feature Name",
@@ -334,7 +334,7 @@ class EnhancedEstimationLLM:
         - Better to overestimate slightly than underestimate significantly
 
         QUAN TRỌNG - Role-specific Estimation with Task Type Breakdown:
-        - Mỗi task đã được assign một role cụ thể (Backend, Frontend, QA, hoặc Infra)
+        - Mỗi task đã được assign một role cụ thể (Backend, Frontend, Testing, hoặc Infra)
         - Bạn cần break down effort theo TASK TYPE cho role tương ứng:
           * Implement: Core development work
           * FixBug: Bug fixing and issue resolution (typically 10-20% of implement)
@@ -346,13 +346,13 @@ class EnhancedEstimationLLM:
           * backend_unittest: 0.5 (unit testing)
           * frontend_implement/fixbug/unittest: 0.0
           * responsive_implement: 0.0
-          * qa_implement: 0.0
+          * testing_implement: 0.0
 
         Trả về kết quả dưới dạng JSON với format:
         {
             "estimation": {
                 "id": "task_id",
-                "role": "Backend|Frontend|QA|Infra",
+                "role": "Backend|Frontend|Testing|Infra",
                 "estimation_manday": 2.5,
                 "backend_implement": 1.5,
                 "backend_fixbug": 0.5,
@@ -361,7 +361,7 @@ class EnhancedEstimationLLM:
                 "frontend_fixbug": 0.0,
                 "frontend_unittest": 0.0,
                 "responsive_implement": 0.0,
-                "qa_implement": 0.0,
+                "testing_implement": 0.0,
                 "confidence_level": 0.8,
                 "breakdown": {
                     "implement": 1.5,
@@ -744,16 +744,16 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             frontend_fix = estimation_data.get('frontend_fixbug', 0.0)
             frontend_test = estimation_data.get('frontend_unittest', 0.0)
             responsive_impl = estimation_data.get('responsive_implement', 0.0)
-            qa_impl = estimation_data.get('qa_implement', 0.0)
+            testing_impl = estimation_data.get('testing_implement', 0.0)
 
             # Calculate role totals
             estimation_backend = backend_impl + backend_fix + backend_test
             estimation_frontend = frontend_impl + frontend_fix + frontend_test
-            estimation_qa = qa_impl
+            estimation_testing = testing_impl
             estimation_infra = 0.0  # Infra not broken down by task type
 
             # Calculate total estimation
-            total_estimation = estimation_backend + estimation_frontend + estimation_qa + estimation_infra + responsive_impl
+            total_estimation = estimation_backend + estimation_frontend + estimation_testing + estimation_infra + responsive_impl
 
             # If LLM didn't provide detailed breakdown, use total and assign to appropriate role
             if total_estimation == 0.0:
@@ -771,9 +771,9 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                     frontend_fix = total_estimation * 0.2
                     frontend_test = total_estimation * 0.2
                     estimation_frontend = total_estimation
-                elif task_role == 'QA':
-                    qa_impl = total_estimation
-                    estimation_qa = total_estimation
+                elif task_role == 'Testing':
+                    testing_impl = total_estimation
+                    estimation_testing = total_estimation
                 elif task_role == 'Infra':
                     estimation_infra = total_estimation
 
@@ -785,7 +785,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             buffered_total = total_estimation * buffer_multiplier
             buffered_backend = estimation_backend * buffer_multiplier
             buffered_frontend = estimation_frontend * buffer_multiplier
-            buffered_qa = estimation_qa * buffer_multiplier
+            buffered_testing = estimation_testing * buffer_multiplier
             buffered_infra = estimation_infra * buffer_multiplier
 
             # Apply buffer to detailed breakdowns
@@ -796,13 +796,13 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
             buffered_frontend_fix = frontend_fix * buffer_multiplier
             buffered_frontend_test = frontend_test * buffer_multiplier
             buffered_responsive_impl = responsive_impl * buffer_multiplier
-            buffered_qa_impl = qa_impl * buffer_multiplier
+            buffered_testing_impl = testing_impl * buffer_multiplier
 
             estimated_task.update({
                 'estimation_manday': buffered_total,
                 'estimation_backend_manday': buffered_backend,
                 'estimation_frontend_manday': buffered_frontend,
-                'estimation_qa_manday': buffered_qa,
+                'estimation_testing_manday': buffered_testing,
                 'estimation_infra_manday': buffered_infra,
                 'original_estimation': total_estimation,  # Keep original before buffer
                 'buffer_applied': buffer_info['buffer_percentage'],
@@ -821,7 +821,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'frontend_fixbug': buffered_frontend_fix,
                 'frontend_unittest': buffered_frontend_test,
                 'responsive_implement': buffered_responsive_impl,
-                'qa_implement': buffered_qa_impl
+                'testing_implement': buffered_testing_impl
             })
 
             logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} → {buffered_total:.1f} mandays (Buffer: {buffer_info['buffer_percentage']*100:.0f}%, Role: {task_breakdown.get('role', 'Unknown')})")
@@ -851,14 +851,14 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         # Assign 1.0 manday to appropriate role
         backend_est = 1.0 if task_role == 'Backend' else 0.0
         frontend_est = 1.0 if task_role == 'Frontend' else 0.0
-        qa_est = 1.0 if task_role == 'QA' else 0.0
+        testing_est = 1.0 if task_role == 'Testing' else 0.0
         infra_est = 1.0 if task_role == 'Infra' else 0.0
-        
+
         fallback_task.update({
             'estimation_manday': 1.0,  # Default fallback
             'estimation_backend_manday': backend_est,
             'estimation_frontend_manday': frontend_est,
-            'estimation_qa_manday': qa_est,
+            'estimation_testing_manday': testing_est,
             'estimation_infra_manday': infra_est,
             'original_estimation': 1.0,
             'confidence_level': 0.5,
@@ -1002,14 +1002,14 @@ def validation_worker(worker_input) -> Dict[str, Any]:
             # Apply adjustment ratio to role-specific estimations
             original_backend = estimation_task.get('estimation_backend_manday', 0.0)
             original_frontend = estimation_task.get('estimation_frontend_manday', 0.0)
-            original_qa = estimation_task.get('estimation_qa_manday', 0.0)
+            original_testing = estimation_task.get('estimation_testing_manday', 0.0)
             original_infra = estimation_task.get('estimation_infra_manday', 0.0)
-            
+
             validated_task.update({
                 'estimation_manday': validated_estimation,
                 'estimation_backend_manday': original_backend * adjustment_ratio,
                 'estimation_frontend_manday': original_frontend * adjustment_ratio,
-                'estimation_qa_manday': original_qa * adjustment_ratio,
+                'estimation_testing_manday': original_testing * adjustment_ratio,
                 'estimation_infra_manday': original_infra * adjustment_ratio,
                 'original_estimation': original_estimation,
                 'confidence_level': validation_data.get('confidence_level', estimation_task.get('confidence_level', 0.7)),
@@ -1395,8 +1395,8 @@ def export_enhanced_excel(
                 'responsive': {
                     'implement': task_dict.get('responsive_implement', 0) or 0
                 },
-                'qa': {
-                    'implement': task_dict.get('qa_implement', 0) or 0
+                'testing': {
+                    'implement': task_dict.get('testing_implement', 0) or 0
                 },
                 'note': task_dict.get('note', '')
             }
@@ -1436,7 +1436,7 @@ def export_enhanced_excel(
                 'task_jp', 'assumption_jp', 'remark', 'note',
                 'backend_implement', 'backend_fixbug', 'backend_unittest',
                 'frontend_implement', 'frontend_fixbug', 'frontend_unittest',
-                'responsive_implement', 'qa_implement'
+                'responsive_implement', 'testing_implement'
             ]
 
             # Filter columns that exist in DataFrame

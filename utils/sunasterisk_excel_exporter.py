@@ -48,15 +48,24 @@ class SunAsteriskExcelExporter:
         "Frontend - Implement",         # 12
         "Frontend - FixBug",            # 13
         "Frontend - Unit Test",         # 14
-        "Responsive - Implement",       # 15
-        "QA - Implement",               # 16
+        "Frontend - Responsive",        # 15
+        "Testing - Implement",          # 16
         "Total (MD)",                   # 17
         "Note"                          # 18
     ]
 
     # Effort column indices (1-based for Excel)
-    EFFORT_COLUMNS = [9, 10, 11, 12, 13, 14, 15, 16]  # Backend-Implement through QA-Implement
+    EFFORT_COLUMNS = [9, 10, 11, 12, 13, 14, 15, 16]  # Backend-Implement through Testing-Implement
     TOTAL_COLUMN = 17  # Total (MD)
+
+    # Minimum column widths (in Excel character units, ~7px per unit)
+    # 100 character units ≈ 700px
+    COLUMN_MIN_WIDTHS = {
+        "Task": 100,           # Column 6 - wide for task descriptions
+        "Sub Task": 100,       # Column 4 - wide for sub-task names
+        "Premise": 100,        # Column 7 - wide for assumptions/prerequisites
+        "備考 Remark": 100     # Column 8 - wide for remarks/notes
+    }
 
     def __init__(
         self,
@@ -182,21 +191,15 @@ class SunAsteriskExcelExporter:
         ws["I5"].alignment = Alignment(horizontal="center", vertical="center")
         ws["I5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
-        # Frontend (cols 12-14)
-        ws.merge_cells("L5:N5")
+        # Frontend (cols 12-15, including Responsive)
+        ws.merge_cells("L5:O5")
         ws["L5"] = "Frontend"
         ws["L5"].font = Font(bold=True, color="FFFFFF")
         ws["L5"].alignment = Alignment(horizontal="center", vertical="center")
         ws["L5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
-        # Responsive (col 15)
-        ws["O5"] = "Responsive"
-        ws["O5"].font = Font(bold=True, color="FFFFFF")
-        ws["O5"].alignment = Alignment(horizontal="center", vertical="center")
-        ws["O5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-
-        # QA (col 16)
-        ws["P5"] = "QA"
+        # Testing (col 16)
+        ws["P5"] = "Testing"
         ws["P5"].font = Font(bold=True, color="FFFFFF")
         ws["P5"].alignment = Alignment(horizontal="center", vertical="center")
         ws["P5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -220,13 +223,13 @@ class SunAsteriskExcelExporter:
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
 
-        # Responsive Implement (col 15)
-        ws.cell(row=6, column=15).value = "Implement"
+        # Frontend Responsive (col 15)
+        ws.cell(row=6, column=15).value = "Responsive"
         ws.cell(row=6, column=15).font = Font(bold=True, color="FFFFFF")
         ws.cell(row=6, column=15).alignment = Alignment(horizontal="center", vertical="center")
         ws.cell(row=6, column=15).fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
 
-        # QA Implement (col 16)
+        # Testing Implement (col 16)
         ws.cell(row=6, column=16).value = "Implement"
         ws.cell(row=6, column=16).font = Font(bold=True, color="FFFFFF")
         ws.cell(row=6, column=16).alignment = Alignment(horizontal="center", vertical="center")
@@ -244,6 +247,11 @@ class SunAsteriskExcelExporter:
             # Formula: (character_count * 1.2) + 2 (padding), minimum width = 10
             char_count = len(col_name)
             calculated_width = max(char_count * 1.2 + 2, 10)
+
+            # Apply special minimum widths for specific columns
+            if col_name in self.COLUMN_MIN_WIDTHS:
+                calculated_width = max(calculated_width, self.COLUMN_MIN_WIDTHS[col_name])
+
             ws.column_dimensions[get_column_letter(idx)].width = calculated_width
 
     def _build_data_table(self, ws, data: List[Dict[str, Any]]) -> int:
@@ -313,7 +321,7 @@ class SunAsteriskExcelExporter:
                 backend_data = task.get("backend", {})
                 frontend_data = task.get("frontend", {})
                 responsive_data = task.get("responsive", {})
-                qa_data = task.get("qa", {})
+                testing_data = task.get("testing", {})
 
                 # Backend - Implement
                 ws.cell(row=row, column=9).value = backend_data.get("implement", 0) or None
@@ -339,12 +347,12 @@ class SunAsteriskExcelExporter:
                 ws.cell(row=row, column=14).value = frontend_data.get("unittest", 0) or None
                 ws.cell(row=row, column=14).alignment = Alignment(horizontal="center", vertical="center")
 
-                # Responsive - Implement
+                # Frontend - Responsive
                 ws.cell(row=row, column=15).value = responsive_data.get("implement", 0) or None
                 ws.cell(row=row, column=15).alignment = Alignment(horizontal="center", vertical="center")
 
-                # QA - Implement
-                ws.cell(row=row, column=16).value = qa_data.get("implement", 0) or None
+                # Testing - Implement
+                ws.cell(row=row, column=16).value = testing_data.get("implement", 0) or None
                 ws.cell(row=row, column=16).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Total (MD) - Formula: SUM of effort columns
