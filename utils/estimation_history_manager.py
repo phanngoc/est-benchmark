@@ -215,20 +215,27 @@ class EstimationHistoryManager:
         # Generate embedding for query
         query_embedding = self.embedding_service.generate_embedding(query_text)
 
-        # Build where filter
-        where_filter = {}
+        # Build where filter with proper ChromaDB syntax
+        where_conditions = []
         if category:
-            where_filter['category'] = category
+            where_conditions.append({'category': category})
         if role:
-            where_filter['role'] = role
+            where_conditions.append({'role': role})
         if complexity:
-            where_filter['complexity'] = complexity
+            where_conditions.append({'complexity': complexity})
+
+        # Use $and operator for multiple conditions
+        where_filter = None
+        if len(where_conditions) == 1:
+            where_filter = where_conditions[0]
+        elif len(where_conditions) > 1:
+            where_filter = {'$and': where_conditions}
 
         # Search
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where=where_filter if where_filter else None
+            where=where_filter
         )
 
         # Parse results

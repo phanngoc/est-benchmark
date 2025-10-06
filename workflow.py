@@ -27,6 +27,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langgraph.checkpoint.memory import MemorySaver
+from streamlit import form
 
 # Import logging
 from utils.logger import get_logger
@@ -49,25 +50,14 @@ class TaskBreakdown:
     sub_task: str = ""
     description: str = ""
     estimation_manday: float = 0.0  # Total estimation (sum of role-specific estimations)
-    estimation_backend_manday: float = 0.0
-    estimation_frontend_manday: float = 0.0
-    estimation_qa_manday: float = 0.0
-    estimation_infra_manday: float = 0.0
     complexity: str = "Medium"  # Low, Medium, High
-    dependencies: List[str] = field(default_factory=list)
     priority: str = "Medium"  # Low, Medium, High
     confidence_level: float = 0.8  # 0.0 - 1.0
-    validation_notes: str = ""
-    worker_source: str = ""  # Which worker created this
 
     # Sun Asterisk-specific fields
     sub_no: str = ""  # Sub.No (e.g., "1.1", "2.3")
-    feature: str = ""  # 画面・機能 Screen・Feature
-    reference: str = ""  # 参照資料 Reference Document
     task_type: str = "Implement"  # Task type (Implement, FixBug, Unit Test, Analysis)
     premise: str = ""  # Premise
-    task_jp: str = ""  # Task(JP) - Japanese description
-    assumption_jp: str = ""  # 想定／前提 - Japanese assumptions
     remark: str = ""  # 備考 Remark
     note: str = ""  # Note
 
@@ -90,24 +80,13 @@ class TaskBreakdown:
             'sub_task': self.sub_task,
             'description': self.description,
             'estimation_manday': self.estimation_manday,
-            'estimation_backend_manday': self.estimation_backend_manday,
-            'estimation_frontend_manday': self.estimation_frontend_manday,
-            'estimation_qa_manday': self.estimation_qa_manday,
-            'estimation_infra_manday': self.estimation_infra_manday,
             'complexity': self.complexity,
-            'dependencies': self.dependencies,
             'priority': self.priority,
             'confidence_level': self.confidence_level,
-            'validation_notes': self.validation_notes,
-            'worker_source': self.worker_source,
             # Sun Asterisk fields
             'sub_no': self.sub_no,
-            'feature': self.feature,
-            'reference': self.reference,
             'task_type': self.task_type,
             'premise': self.premise,
-            'task_jp': self.task_jp,
-            'assumption_jp': self.assumption_jp,
             'remark': self.remark,
             'note': self.note,
             'backend_implement': self.backend_implement,
@@ -124,13 +103,11 @@ class TaskBreakdown:
         """Convert to Sun Asterisk Excel format."""
         return {
             'category': self.category,
+            'parent_task': self.parent_task,
+            'sub_task': self.sub_task,
             'sub_no': self.sub_no,
-            'feature': self.feature or self.sub_task,  # Fallback to sub_task
-            'reference': self.reference or self.description,  # Fallback to description
             'task': self.task_type,
             'premise': self.premise,
-            'task_jp': self.task_jp,
-            'assumption_jp': self.assumption_jp,
             'remark': self.remark,
             'backend': {
                 'implement': self.backend_implement,
@@ -1145,11 +1122,6 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
     estimation_results = state.get('estimation_results', [])
     validated_results = state.get('validated_results', [])
 
-    # OPTION 2 + OPTION 3: Merge results
-    # - validated_results: Tasks that went through LLM validation (Option 3 filtered)
-    # - estimation_results: All tasks from estimation worker
-    # Apply rule-based validation to tasks that skipped LLM validation
-
     if not estimation_results and not validated_results:
         logger.warning("⚠️ Không có results từ workers")
         return {
@@ -1404,13 +1376,11 @@ def export_enhanced_excel(
             # Convert to Sun Asterisk format
             sunasterisk_task = {
                 'category': task_dict.get('category', ''),
+                'parent_task': task_dict.get('parent_task', ''),
+                'sub_task': task_dict.get('sub_task', ''),
                 'sub_no': task_dict.get('sub_no', ''),
-                'feature': task_dict.get('feature', '') or task_dict.get('sub_task', ''),
-                'reference': task_dict.get('reference', '') or task_dict.get('description', ''),
                 'task': task_dict.get('task_type', 'Implement'),
                 'premise': task_dict.get('premise', ''),
-                'task_jp': task_dict.get('task_jp', ''),
-                'assumption_jp': task_dict.get('assumption_jp', ''),
                 'remark': task_dict.get('remark', ''),
                 'backend': {
                     'implement': task_dict.get('backend_implement', 0) or 0,
@@ -1459,14 +1429,14 @@ def export_enhanced_excel(
             # Main estimation table với enhanced columns including role-specific estimations
             estimation_columns = [
                 'id', 'category', 'role', 'parent_task', 'sub_task', 'description',
-                'estimation_manday', 
-                'estimation_backend_manday',
-                'estimation_frontend_manday',
-                'estimation_qa_manday',
-                'estimation_infra_manday',
-                'original_estimation', 'confidence_level',
-                'complexity', 'priority', 'worker_source', 'validation_notes',
-                'adjustment_reason', 'dependencies', 'risk_factors', 'assumptions'
+                'estimation_manday',
+                'confidence_level', 'complexity', 'priority',
+                # Sun Asterisk detailed breakdown
+                'sub_no', 'feature', 'reference', 'task_type', 'premise',
+                'task_jp', 'assumption_jp', 'remark', 'note',
+                'backend_implement', 'backend_fixbug', 'backend_unittest',
+                'frontend_implement', 'frontend_fixbug', 'frontend_unittest',
+                'responsive_implement', 'qa_implement'
             ]
 
             # Filter columns that exist in DataFrame
@@ -1691,7 +1661,7 @@ class EnhancedEstimationWorkflow:
         self,
         result: Dict[str, Any],
         filename: str = None,
-        format: str = "enhanced",
+        format: str = "sunasterisk",
         no: str = "001",
         version: str = "1.0",
         issue_date: str = None,
@@ -1833,7 +1803,7 @@ if __name__ == "__main__":
 
     # Xuất kết quả
     if result.get('workflow_status') == 'completed':
-        excel_file = enhanced_workflow.export_results(result)
+        excel_file = enhanced_workflow.export_results(result, format="sunasterisk")
         mermaid_diagram = enhanced_workflow.get_mermaid_diagram(result)
         validation_summary = enhanced_workflow.get_validation_summary(result)
 
