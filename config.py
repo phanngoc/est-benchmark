@@ -43,6 +43,7 @@ class Config:
     WORKING_DIR = "./graphrag_workspace"
     UPLOADS_DIR = "./uploads"
     RESULT_EST_DIR = "./result_est"  # Dedicated folder for estimation Excel files
+    ARCHITECTURE_DIAGRAMS_DIR = "./architecture_diagrams"  # Dedicated folder for architecture diagrams
 
     # File Metadata Configuration
     METADATA_FILE = ".metadata.json"

@@ -12,6 +12,7 @@ from utils.graphrag_handler import GraphRAGHandler
 from utils.visualization import GraphVisualization
 from workflow import EnhancedEstimationWorkflow
 from utils.logger import init_logging, get_logger
+from utils.architecture_diagram import ArchitectureDiagramGenerator
 
 # Initialize logging system
 init_logging(log_dir=Config.LOG_DIR, log_level=Config.LOG_LEVEL)
@@ -341,7 +342,7 @@ def main():
         st.rerun()
 
     # Main content area
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History", "📊 Master Data Management"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History", "📊 Master Data Management", "🏗️ System Architecture"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
@@ -1267,6 +1268,162 @@ def main():
         except Exception as e:
             st.error(f"❌ Error in Master Data Management: {str(e)}")
             logger.exception(f"Master Data Management error: {e}")
+
+    with tab6:
+        st.header("🏗️ System Architecture Diagram")
+
+        try:
+            import sqlite3
+            from utils.estimation_result_tracker import get_result_tracker
+
+            tracker = get_result_tracker()
+
+            # Get latest estimation
+            estimations = tracker.list_all_estimations(limit=1)
+
+            if not estimations:
+                st.info("📭 Chưa có estimation nào. Vui lòng chạy Project Estimation trước.")
+            else:
+                latest_estimation = estimations[0]
+                estimation_id = latest_estimation['estimation_id']
+                project_description = latest_estimation.get('project_description', '')
+
+                st.subheader("📋 Project Information")
+
+                # Display estimation metadata
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Estimation ID", estimation_id[:8] + "...")
+                with col2:
+                    st.metric("Created At", latest_estimation['created_at'])
+                with col3:
+                    st.metric("Total Effort", f"{latest_estimation['total_effort']:.1f} days")
+
+                # Display project description
+                with st.expander("📄 Project Description", expanded=False):
+                    st.text_area(
+                        "Full Description",
+                        value=project_description,
+                        height=200,
+                        disabled=True,
+                        key="arch_project_desc"
+                    )
+
+                st.divider()
+
+                # Architecture diagram generation section
+                st.subheader("🎨 Generate Architecture Diagram")
+
+                st.markdown("""
+                **Chức năng này sẽ:**
+                - 🧠 Phân tích project description bằng AI
+                - 🔍 Tự động nhận diện các components chính (Backend, Frontend, Database, Mobile, Third-party)
+                - 🎨 Tạo architecture diagram rõ ràng, chuyên nghiệp
+                - 📥 Export ra file PNG để sử dụng trong proposal
+                """)
+
+                # Generate button
+                if st.button("🎨 Generate Architecture Diagram", type="primary", key="generate_arch_diagram"):
+                    with st.spinner("🔄 Đang phân tích và tạo diagram..."):
+                        try:
+                            # Initialize diagram generator
+                            diagram_gen = ArchitectureDiagramGenerator()
+
+                            # Generate diagram with fallback for config
+                            output_dir = getattr(Config, 'ARCHITECTURE_DIAGRAMS_DIR', './architecture_diagrams')
+                            diagram_path = diagram_gen.generate_diagram(
+                                project_description,
+                                output_dir=output_dir
+                            )
+
+                            if diagram_path and os.path.exists(diagram_path):
+                                st.success("✅ Architecture diagram đã được tạo thành công!")
+                                st.session_state['arch_diagram_path'] = diagram_path
+
+                                # Extract components info for display
+                                components, connections = diagram_gen.extract_components(project_description)
+                                diagram_info = diagram_gen.get_diagram_info(components, connections)
+                                st.session_state['arch_diagram_info'] = diagram_info
+
+                                st.rerun()
+                            else:
+                                st.error("❌ Không thể tạo diagram. Vui lòng kiểm tra logs.")
+                                logger.error("Diagram generation returned None or file not found")
+
+                        except Exception as e:
+                            st.error(f"❌ Lỗi khi tạo diagram: {str(e)}")
+                            logger.exception(f"Architecture diagram generation error: {e}")
+
+                # Display generated diagram if exists
+                if st.session_state.get('arch_diagram_path'):
+                    diagram_path = st.session_state['arch_diagram_path']
+
+                    if os.path.exists(diagram_path):
+                        st.divider()
+                        st.subheader("📊 Generated Architecture Diagram")
+
+                        # Display diagram image
+                        st.image(diagram_path, caption="System Architecture Diagram", use_container_width=True)
+
+                        # Display component info
+                        if st.session_state.get('arch_diagram_info'):
+                            info = st.session_state['arch_diagram_info']
+
+                            st.subheader("🔍 Architecture Summary")
+
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Total Components", info['total_components'])
+                            with col2:
+                                st.metric("Total Connections", info['total_connections'])
+
+                            # Component types breakdown
+                            if info.get('component_types'):
+                                st.markdown("**Component Types:**")
+                                types_df = pd.DataFrame(
+                                    list(info['component_types'].items()),
+                                    columns=['Type', 'Count']
+                                )
+                                st.dataframe(types_df, use_container_width=True, hide_index=True)
+
+                            # Detailed component list
+                            with st.expander("📋 Detailed Component List", expanded=False):
+                                components_df = pd.DataFrame(info['components'])
+                                st.dataframe(components_df, use_container_width=True, hide_index=True)
+
+                        st.divider()
+
+                        # Export section
+                        st.subheader("📥 Export Diagram")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # Download PNG
+                            with open(diagram_path, 'rb') as f:
+                                st.download_button(
+                                    label="📥 Download PNG",
+                                    data=f.read(),
+                                    file_name=f"architecture_diagram_{estimation_id[:8]}.png",
+                                    mime="image/png",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+
+                        with col2:
+                            # Regenerate button
+                            if st.button("🔄 Regenerate Diagram", type="secondary", use_container_width=True):
+                                st.session_state.pop('arch_diagram_path', None)
+                                st.session_state.pop('arch_diagram_info', None)
+                                st.rerun()
+
+                    else:
+                        st.warning("⚠️ Diagram file không tồn tại. Vui lòng generate lại.")
+                        st.session_state.pop('arch_diagram_path', None)
+
+        except Exception as e:
+            st.error(f"❌ Error in System Architecture tab: {str(e)}")
+            logger.exception(f"System Architecture tab error: {e}")
 
 if __name__ == "__main__":
     main()
