@@ -147,10 +147,25 @@ class ArchitectureDiagramGenerator:
         "codedeploy": ("aws.devtools", "Codedeploy"),
 
         # Third Party & Generic
-        "third_party": ("aws.general", "User"),
+        "third_party": ("aws.integration", "SimpleNotificationServiceSnsEmailNotification"),  # Generic external service
         "external_service": ("aws.general", "InternetGateway"),
+        "payment_service": ("aws.blockchain", "BlockchainResource"),  # Payment/Financial services
+        "wallet_service": ("aws.blockchain", "BlockchainResource"),
+        "analytics_service": ("aws.analytics", "Analytics"),
+        "email_service": ("aws.integration", "SimpleNotificationServiceSnsEmailNotification"),
+        "sms_service": ("aws.integration", "SimpleNotificationServiceSnsTopic"),
+        "notification_service": ("aws.integration", "SNS"),
         "client": ("aws.general", "User"),
         "user": ("aws.general", "User"),
+        "users": ("aws.general", "Users"),
+
+        # Specific third-party services (common integrations)
+        "pokepay": ("aws.blockchain", "BlockchainResource"),
+        "stripe": ("aws.blockchain", "BlockchainResource"),
+        "braze": ("aws.analytics", "Analytics"),
+        "offerwall": ("aws.mobile", "APIGateway"),
+        "cpm": ("aws.game", "Gamelift"),  # Game management system
+        "game_management": ("aws.game", "Gamelift"),
     }
 
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
@@ -264,8 +279,16 @@ Monitoring:
 - cloudwatch: Logging and monitoring
 - xray: Distributed tracing
 
-Third Party:
-- third_party: External APIs (Stripe, SendGrid, etc.)
+Third Party Services (use specific types):
+- pokepay: Pokepay wallet service
+- stripe/payment_service: Payment gateways
+- wallet_service: E-wallet platforms
+- braze: Marketing/Analytics platform
+- offerwall: Advertising/Reward platforms
+- cpm/game_management: Game management systems
+- analytics_service: Analytics platforms
+- email_service: Email services (SendGrid, SES)
+- third_party: Generic external API (fallback)
 - client: End users
 
 **Architecture Pattern Example:**
@@ -338,7 +361,7 @@ Extract components now.
     def _get_icon_for_type(self, component_type: str) -> Tuple[str, str]:
         """
         Get Diagrams icon module và name cho component type
-        
+
         If component type not found, try to infer from context or use generic icon
 
         Returns:
@@ -347,33 +370,47 @@ Extract components now.
         # Try exact match first
         if component_type in self.ICON_MAPPING:
             return self.ICON_MAPPING[component_type]
-        
+
         # Try fuzzy matching for common patterns
         comp_lower = component_type.lower()
-        
+
+        # Third-party services (check first for specific services)
+        if any(keyword in comp_lower for keyword in ['pokepay', 'stripe', 'payment', 'wallet']):
+            return ("aws.blockchain", "BlockchainResource")
+
+        if any(keyword in comp_lower for keyword in ['braze', 'analytics', 'offerwall', 'marketing']):
+            return ("aws.analytics", "Analytics")
+
+        if any(keyword in comp_lower for keyword in ['cpm', 'game', 'gamelift']):
+            return ("aws.game", "Gamelift")
+
         # Container-related
         if any(keyword in comp_lower for keyword in ['container', 'docker', 'ecs', 'fargate']):
             return ("aws.compute", "ECS")
-        
+
         # API-related
         if any(keyword in comp_lower for keyword in ['api', 'rest', 'graphql', 'service']):
             return ("aws.compute", "ECS")
-        
+
         # Database-related
         if any(keyword in comp_lower for keyword in ['db', 'database', 'sql']):
             return ("aws.database", "RDS")
-        
+
         # Queue/messaging
         if any(keyword in comp_lower for keyword in ['queue', 'message', 'kafka', 'mq']):
             return ("aws.integration", "SQS")
-        
+
         # Storage
         if any(keyword in comp_lower for keyword in ['storage', 'file', 'object']):
             return ("aws.storage", "S3")
-        
-        # Default fallback: Use generic User icon for unknown types
-        logger.warning(f"Unknown component type '{component_type}', using generic icon")
-        return ("aws.general", "User")
+
+        # Monitoring/Logging
+        if any(keyword in comp_lower for keyword in ['monitor', 'log', 'cloudwatch', 'xray']):
+            return ("aws.management", "Cloudwatch")
+
+        # Default fallback: Use InternetGateway for external services
+        logger.warning(f"Unknown component type '{component_type}', using external service icon")
+        return ("aws.general", "InternetGateway")
 
     def generate_diagram_code(self, components: List[Component], connections: List[Connection],
                                diagram_name: str = "System Architecture") -> str:
