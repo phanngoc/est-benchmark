@@ -39,32 +39,31 @@ class SunAsteriskExcelExporter:
         "Parent Task",                  # 3
         "Sub Task",                     # 4
         "Sub.No",                       # 5
-        "Task",                         # 6
-        "Premise",                      # 7
-        "備考 Remark",                   # 8
-        "Backend - Implement",          # 9
-        "Backend - FixBug",             # 10
-        "Backend - Unit Test",          # 11
-        "Frontend - Implement",         # 12
-        "Frontend - FixBug",            # 13
-        "Frontend - Unit Test",         # 14
-        "Frontend - Responsive",        # 15
-        "Testing - Implement",          # 16
-        "Total (MD)",                   # 17
-        "Note"                          # 18
+        "Premise",                      # 6
+        "備考 Remark",                   # 7
+        "Backend - Implement",          # 8
+        "Backend - FixBug",             # 9
+        "Backend - Unit Test",          # 10
+        "Frontend - Implement",         # 11
+        "Frontend - FixBug",            # 12
+        "Frontend - Unit Test",         # 13
+        "Frontend - Responsive",        # 14
+        "Testing - Implement",          # 15
+        "Total (MD)",                   # 16
+        "Note"                          # 17
     ]
 
     # Effort column indices (1-based for Excel)
-    EFFORT_COLUMNS = [9, 10, 11, 12, 13, 14, 15, 16]  # Backend-Implement through Testing-Implement
-    TOTAL_COLUMN = 17  # Total (MD)
+    EFFORT_COLUMNS = [8, 9, 10, 11, 12, 13, 14, 15]  # Backend-Implement through Testing-Implement
+    TOTAL_COLUMN = 16  # Total (MD)
 
     # Minimum column widths (in Excel character units, ~7px per unit)
-    # 100 character units ≈ 700px
+    # 50 character units ≈ 350px (half of previous 100)
     COLUMN_MIN_WIDTHS = {
-        "Task": 100,           # Column 6 - wide for task descriptions
-        "Sub Task": 100,       # Column 4 - wide for sub-task names
-        "Premise": 100,        # Column 7 - wide for assumptions/prerequisites
-        "備考 Remark": 100     # Column 8 - wide for remarks/notes
+        "Parent Task": 50,     # Column 3 - half width
+        "Sub Task": 50,        # Column 4 - half width
+        "Premise": 50,         # Column 6 - half width
+        "備考 Remark": 50      # Column 7 - half width
     }
 
     def __init__(
@@ -184,56 +183,56 @@ class SunAsteriskExcelExporter:
         ws["M1"].alignment = Alignment(horizontal="center", vertical="center")
 
         # Row 5: Role group headers
-        # Backend (cols 9-11)
-        ws.merge_cells("I5:K5")
-        ws["I5"] = "Backend"
-        ws["I5"].font = Font(bold=True, color="FFFFFF")
-        ws["I5"].alignment = Alignment(horizontal="center", vertical="center")
-        ws["I5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        # Backend (cols 8-10)
+        ws.merge_cells("H5:J5")
+        ws["H5"] = "Backend"
+        ws["H5"].font = Font(bold=True, color="FFFFFF")
+        ws["H5"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["H5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
-        # Frontend (cols 12-15, including Responsive)
-        ws.merge_cells("L5:O5")
-        ws["L5"] = "Frontend"
-        ws["L5"].font = Font(bold=True, color="FFFFFF")
-        ws["L5"].alignment = Alignment(horizontal="center", vertical="center")
-        ws["L5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        # Frontend (cols 11-14, including Responsive)
+        ws.merge_cells("K5:N5")
+        ws["K5"] = "Frontend"
+        ws["K5"].font = Font(bold=True, color="FFFFFF")
+        ws["K5"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["K5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
-        # Testing (col 16)
-        ws["P5"] = "Testing"
-        ws["P5"].font = Font(bold=True, color="FFFFFF")
-        ws["P5"].alignment = Alignment(horizontal="center", vertical="center")
-        ws["P5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        # Testing (col 15)
+        ws["O5"] = "Testing"
+        ws["O5"].font = Font(bold=True, color="FFFFFF")
+        ws["O5"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["O5"].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
         # Row 6: Task type sub-headers
         task_types = ["Implement", "FixBug", "Unit Test"]
 
-        # Backend task types (cols 9-11)
-        for i, task_type in enumerate(task_types, start=9):
+        # Backend task types (cols 8-10)
+        for i, task_type in enumerate(task_types, start=8):
             cell = ws.cell(row=6, column=i)
             cell.value = task_type
             cell.font = Font(bold=True, color="FFFFFF")
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
 
-        # Frontend task types (cols 12-14)
-        for i, task_type in enumerate(task_types, start=12):
+        # Frontend task types (cols 11-13)
+        for i, task_type in enumerate(task_types, start=11):
             cell = ws.cell(row=6, column=i)
             cell.value = task_type
             cell.font = Font(bold=True, color="FFFFFF")
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
 
-        # Frontend Responsive (col 15)
-        ws.cell(row=6, column=15).value = "Responsive"
+        # Frontend Responsive (col 14)
+        ws.cell(row=6, column=14).value = "Responsive"
+        ws.cell(row=6, column=14).font = Font(bold=True, color="FFFFFF")
+        ws.cell(row=6, column=14).alignment = Alignment(horizontal="center", vertical="center")
+        ws.cell(row=6, column=14).fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+
+        # Testing Implement (col 15)
+        ws.cell(row=6, column=15).value = "Implement"
         ws.cell(row=6, column=15).font = Font(bold=True, color="FFFFFF")
         ws.cell(row=6, column=15).alignment = Alignment(horizontal="center", vertical="center")
         ws.cell(row=6, column=15).fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
-
-        # Testing Implement (col 16)
-        ws.cell(row=6, column=16).value = "Implement"
-        ws.cell(row=6, column=16).font = Font(bold=True, color="FFFFFF")
-        ws.cell(row=6, column=16).alignment = Alignment(horizontal="center", vertical="center")
-        ws.cell(row=6, column=16).fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
 
         # Row 7: Main column headers
         for idx, col_name in enumerate(self.COLUMNS, start=1):
@@ -305,17 +304,13 @@ class SunAsteriskExcelExporter:
                 ws.cell(row=row, column=5).value = task.get("sub_no", "")
                 ws.cell(row=row, column=5).alignment = Alignment(horizontal="center", vertical="center")
 
-                # Task
-                ws.cell(row=row, column=6).value = task.get("task", "")
+                # Premise
+                ws.cell(row=row, column=6).value = task.get("premise", "")
                 ws.cell(row=row, column=6).alignment = Alignment(horizontal="left", vertical="center")
 
-                # Premise
-                ws.cell(row=row, column=7).value = task.get("premise", "")
-                ws.cell(row=row, column=7).alignment = Alignment(horizontal="left", vertical="center")
-
                 # 備考 Remark
-                ws.cell(row=row, column=8).value = task.get("remark", "")
-                ws.cell(row=row, column=8).alignment = Alignment(horizontal="left", vertical="center")
+                ws.cell(row=row, column=7).value = task.get("remark", "")
+                ws.cell(row=row, column=7).alignment = Alignment(horizontal="left", vertical="center")
 
                 # Effort columns
                 backend_data = task.get("backend", {})
@@ -324,47 +319,47 @@ class SunAsteriskExcelExporter:
                 testing_data = task.get("testing", {})
 
                 # Backend - Implement
-                ws.cell(row=row, column=9).value = backend_data.get("implement", 0) or None
-                ws.cell(row=row, column=9).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=8).value = backend_data.get("implement", 0) or None
+                ws.cell(row=row, column=8).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Backend - FixBug
-                ws.cell(row=row, column=10).value = backend_data.get("fixbug", 0) or None
-                ws.cell(row=row, column=10).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=9).value = backend_data.get("fixbug", 0) or None
+                ws.cell(row=row, column=9).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Backend - Unit Test
-                ws.cell(row=row, column=11).value = backend_data.get("unittest", 0) or None
-                ws.cell(row=row, column=11).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=10).value = backend_data.get("unittest", 0) or None
+                ws.cell(row=row, column=10).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Frontend - Implement
-                ws.cell(row=row, column=12).value = frontend_data.get("implement", 0) or None
-                ws.cell(row=row, column=12).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=11).value = frontend_data.get("implement", 0) or None
+                ws.cell(row=row, column=11).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Frontend - FixBug
-                ws.cell(row=row, column=13).value = frontend_data.get("fixbug", 0) or None
-                ws.cell(row=row, column=13).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=12).value = frontend_data.get("fixbug", 0) or None
+                ws.cell(row=row, column=12).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Frontend - Unit Test
-                ws.cell(row=row, column=14).value = frontend_data.get("unittest", 0) or None
-                ws.cell(row=row, column=14).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=13).value = frontend_data.get("unittest", 0) or None
+                ws.cell(row=row, column=13).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Frontend - Responsive
-                ws.cell(row=row, column=15).value = responsive_data.get("implement", 0) or None
-                ws.cell(row=row, column=15).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=14).value = responsive_data.get("implement", 0) or None
+                ws.cell(row=row, column=14).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Testing - Implement
-                ws.cell(row=row, column=16).value = testing_data.get("implement", 0) or None
-                ws.cell(row=row, column=16).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=15).value = testing_data.get("implement", 0) or None
+                ws.cell(row=row, column=15).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Total (MD) - Formula: SUM of effort columns
                 effort_start = get_column_letter(self.EFFORT_COLUMNS[0])
                 effort_end = get_column_letter(self.EFFORT_COLUMNS[-1])
                 total_formula = f"=SUM({effort_start}{row}:{effort_end}{row})"
-                ws.cell(row=row, column=17).value = total_formula
-                ws.cell(row=row, column=17).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=row, column=16).value = total_formula
+                ws.cell(row=row, column=16).alignment = Alignment(horizontal="center", vertical="center")
 
                 # Note
-                ws.cell(row=row, column=18).value = task.get("note", "")
-                ws.cell(row=row, column=18).alignment = Alignment(horizontal="left", vertical="center")
+                ws.cell(row=row, column=17).value = task.get("note", "")
+                ws.cell(row=row, column=17).alignment = Alignment(horizontal="left", vertical="center")
 
                 current_row += 1
                 task_number += 1
@@ -377,7 +372,7 @@ class SunAsteriskExcelExporter:
         total_row = last_row + 1  # Row after last data row
 
         # Merge cells for "Total (MM)" label
-        ws.merge_cells(f"A{total_row}:H{total_row}")
+        ws.merge_cells(f"A{total_row}:G{total_row}")
         ws[f"A{total_row}"] = "Total (MM)"
         ws[f"A{total_row}"].font = Font(bold=True)
         ws[f"A{total_row}"].alignment = Alignment(horizontal="center", vertical="center")
