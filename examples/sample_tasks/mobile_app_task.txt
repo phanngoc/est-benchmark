@@ -1,0 +1,65 @@
+Phát triển ứng dụng mobile cross-platform (iOS/Android) cho dịch vụ food delivery với các tính năng:
+
+## Core Features
+- User registration và authentication
+- Location-based restaurant discovery
+- Menu browsing với hình ảnh và mô tả
+- Shopping cart và order placement
+- Real-time order tracking
+- Payment integration (credit card, e-wallet)
+- Rating và review system
+- Push notifications
+
+## User Interface
+- Onboarding screens
+- Home screen với restaurants gần đó
+- Restaurant detail pages
+- Food item detail với customization options
+- Cart management
+- Checkout flow
+- Order history
+- Profile management
+- Settings và preferences
+
+## Technical Requirements
+- Cross-platform development (React Native/Flutter)
+- Offline functionality cho basic features
+- GPS integration cho location services
+- Camera integration cho profile photos
+- Biometric authentication (fingerprint/face ID)
+- Deep linking support
+- App store optimization
+
+## Backend Integration
+- RESTful API integration
+- Real-time updates với WebSocket
+- Image upload và optimization
+- Caching strategy
+- Error handling và retry logic
+
+## Performance Requirements
+- App startup time < 3 seconds
+- Smooth scrolling và navigation
+- Image loading optimization
+- Memory management
+- Battery optimization
+
+## Security
+- Secure API communication
+- Payment data protection
+- User data encryption
+- Session management
+
+## Testing
+- Unit testing
+- UI testing
+- Device compatibility testing
+- Performance testing
+- Security testing
+
+## Deployment
+- App store submission (iOS App Store, Google Play)
+- Beta testing distribution
+- Analytics integration
+- Crash reporting
+- A/B testing setup

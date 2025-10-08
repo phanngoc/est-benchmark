@@ -4,6 +4,30 @@ from typing import List, Dict, Any, Optional
 from fast_graphrag import GraphRAG
 import json
 from datetime import datetime
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+def validate_openai_api_key() -> bool:
+    """Validate OpenAI API key exists and has correct format"""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+
+    if not api_key:
+        logger.error("OPENAI_API_KEY not found in environment")
+        return False
+
+    if not api_key.startswith("sk-"):
+        logger.error(f"Invalid OPENAI_API_KEY format (should start with 'sk-')")
+        return False
+
+    if len(api_key) < 20:
+        logger.error(f"OPENAI_API_KEY too short (length: {len(api_key)})")
+        return False
+
+    logger.info("OpenAI API key validation passed")
+    return True
 
 class GraphRAGHandler:
     """Wrapper class để quản lý Fast GraphRAG"""
@@ -12,13 +36,21 @@ class GraphRAGHandler:
         self.working_dir = working_dir
         self.graphrag = None
         self.is_initialized = False
-        
+
         # Tạo working directory nếu chưa có
         os.makedirs(working_dir, exist_ok=True)
+        logger.info(f"GraphRAGHandler initialized with working_dir: {working_dir}")
     
     def initialize(self, domain: str, entity_types: List[str], example_queries: List[str]) -> bool:
         """Khởi tạo GraphRAG với cấu hình"""
+        # Validate API key first
+        if not validate_openai_api_key():
+            st.error("❌ Invalid or missing OPENAI_API_KEY. Please check your .env file.")
+            return False
+
         try:
+            logger.info(f"Initializing GraphRAG with domain: {domain}")
+            logger.debug(f"Entity types: {entity_types}")
             self.graphrag = GraphRAG(
                 working_dir=self.working_dir,
                 domain=domain,
@@ -26,56 +58,91 @@ class GraphRAGHandler:
                 example_queries="\n".join(example_queries)
             )
             self.is_initialized = True
+            logger.info("GraphRAG initialized successfully")
             return True
         except Exception as e:
             st.error(f"Lỗi khi khởi tạo GraphRAG: {str(e)}")
+            logger.error(f"Failed to initialize GraphRAG: {str(e)}")
             return False
+
+    def _insert_sync(self, content: str):
+        """Synchronous insert wrapper - disable tqdm to avoid stderr pipe issues in Streamlit"""
+        return self.graphrag.insert(content, show_progress=False)
     
     def insert_documents(self, documents: List[Dict[str, Any]], progress_callback=None) -> bool:
-        """Thêm tài liệu vào GraphRAG"""
+        """Thêm tài liệu vào GraphRAG với async wrapper để tránh event loop conflict"""
         if not self.is_initialized:
             st.error("GraphRAG chưa được khởi tạo")
+            logger.error("Attempted to insert documents without GraphRAG initialization")
             return False
-        
+
         try:
             total_docs = len(documents)
+            logger.info(f"Starting document insertion: {total_docs} documents")
+
+            # Get or create event loop for Streamlit context
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
             for i, doc in enumerate(documents):
                 if progress_callback:
                     progress_callback(i, total_docs, f"Đang xử lý: {doc['name']}")
-                
-                # Thêm document vào GraphRAG
-                self.graphrag.insert(doc['content'])
-                
+
+                logger.debug(f"Inserting document {i+1}/{total_docs}: {doc['name']}")
+                logger.debug(f"Document content preview: {doc['content'][:100]}...")
+
+                # Run insert in thread pool to avoid blocking event loop
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = loop.run_in_executor(executor, self._insert_sync, doc['content'])
+                    # Wait for completion without blocking
+                    loop.run_until_complete(asyncio.wait_for(future, timeout=300))  # 5 min timeout
+
                 # Log progress
-                st.write(f"✅ Đã xử lý: {doc['name']} ({doc['size_mb']:.1f}MB)")
-            
+                st.write(f"✅ Đã xử lý: {doc['name']}")
+                logger.debug(f"Processed document {i+1}/{total_docs}: {doc['name']}")
+
             if progress_callback:
                 progress_callback(total_docs, total_docs, "Hoàn thành!")
-            
+
+            logger.info(f"Successfully inserted {total_docs} documents into GraphRAG")
             return True
-            
+
+        except asyncio.TimeoutError:
+            error_msg = "Document insertion timeout (exceeded 5 minutes)"
+            st.error(f"❌ {error_msg}")
+            logger.error(error_msg)
+            return False
         except Exception as e:
             st.error(f"Lỗi khi thêm tài liệu: {str(e)}")
+            logger.error(f"Error inserting documents: {str(e)}")
+            logger.exception(e)
             return False
     
     def query(self, query: str, with_references: bool = True) -> Optional[Dict[str, Any]]:
         """Thực hiện query trên GraphRAG"""
         if not self.is_initialized:
             st.error("GraphRAG chưa được khởi tạo")
+            logger.error("Attempted query without GraphRAG initialization")
             return None
-        
+
         try:
+            logger.debug(f"Executing GraphRAG query: {query[:100]}...")
             result = self.graphrag.query(query)
-            
+
+            logger.info(f"Query executed successfully: {query[:50]}...")
             return {
                 'response': result.response,
                 'references': getattr(result, 'references', []) if with_references else [],
                 'query': query,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
         except Exception as e:
             st.error(f"Lỗi khi thực hiện query: {str(e)}")
+            logger.error(f"Query execution failed: {str(e)}")
             return None
     
     def get_graph_info(self) -> Dict[str, Any]:
