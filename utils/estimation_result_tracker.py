@@ -138,7 +138,8 @@ class EstimationResultTracker:
         self,
         estimation_id: str,
         file_path: str,
-        summary_data: Dict[str, Any]
+        summary_data: Dict[str, Any],
+        project_id: str = None
     ) -> str:
         """
         Create a new estimation run entry
@@ -152,6 +153,7 @@ class EstimationResultTracker:
                 - average_confidence: Average confidence level
                 - workflow_status: Status (completed, failed, etc.)
                 - project_description: Original task description
+            project_id: Project identifier (optional)
 
         Returns:
             estimation_id
@@ -162,11 +164,12 @@ class EstimationResultTracker:
         try:
             cursor.execute("""
                 INSERT INTO estimation_runs
-                (estimation_id, file_path, total_effort, total_tasks,
+                (estimation_id, project_id, file_path, total_effort, total_tasks,
                  average_confidence, workflow_status, project_description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 estimation_id,
+                project_id,
                 file_path,
                 summary_data.get('total_effort', 0.0),
                 summary_data.get('total_tasks', 0),
@@ -176,7 +179,7 @@ class EstimationResultTracker:
             ))
 
             conn.commit()
-            logger.info(f"✅ Created estimation run: {estimation_id}")
+            logger.info(f"✅ Created estimation run: {estimation_id} (project: {project_id})")
 
             return estimation_id
 
@@ -190,7 +193,8 @@ class EstimationResultTracker:
     def save_estimation_tasks(
         self,
         estimation_id: str,
-        tasks_data: List[Dict[str, Any]]
+        tasks_data: List[Dict[str, Any]],
+        project_id: str = None
     ) -> int:
         """
         Save detailed task data for an estimation run
@@ -198,6 +202,7 @@ class EstimationResultTracker:
         Args:
             estimation_id: ID of the estimation run
             tasks_data: List of task dictionaries with estimation details
+            project_id: Project identifier (optional)
 
         Returns:
             Number of tasks saved
@@ -220,14 +225,15 @@ class EstimationResultTracker:
 
                 cursor.execute("""
                     INSERT INTO estimation_tasks
-                    (estimation_id, id, category, role, parent_task, sub_task,
+                    (estimation_id, project_id, id, category, role, parent_task, sub_task,
                      description, estimation_manday, estimation_backend_manday,
                      estimation_frontend_manday, estimation_qa_manday,
                      estimation_infra_manday, confidence_level, complexity,
                      priority, dependencies, risk_factors, assumptions)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     estimation_id,
+                    project_id,
                     task.get('id', ''),
                     task.get('category', ''),
                     task.get('role', ''),
@@ -378,7 +384,8 @@ class EstimationResultTracker:
         keyword: str = None,
         min_effort: float = None,
         max_effort: float = None,
-        status: str = None
+        status: str = None,
+        project_id: str = None
     ) -> List[Dict[str, Any]]:
         """
         Search estimations with filters
@@ -388,6 +395,7 @@ class EstimationResultTracker:
             min_effort: Minimum total effort
             max_effort: Maximum total effort
             status: Workflow status filter
+            project_id: Filter by project_id
 
         Returns:
             List of matching estimation runs
@@ -415,6 +423,10 @@ class EstimationResultTracker:
             query += " AND workflow_status = ?"
             params.append(status)
 
+        if project_id:
+            query += " AND project_id = ?"
+            params.append(project_id)
+
         query += " ORDER BY created_at DESC"
 
         try:
@@ -428,6 +440,18 @@ class EstimationResultTracker:
 
         finally:
             conn.close()
+    
+    def get_estimations_by_project(self, project_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all estimations for a specific project
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            List of estimation runs for the project
+        """
+        return self.search_estimations(project_id=project_id)
 
     def get_statistics(self) -> Dict[str, Any]:
         """

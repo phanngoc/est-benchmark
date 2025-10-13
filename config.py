@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -48,6 +49,43 @@ class Config:
     # File Metadata Configuration
     METADATA_FILE = ".metadata.json"
     HASH_ALGORITHM = "sha256"
+    
+    @classmethod
+    def get_project_uploads_dir(cls, project_id: str) -> str:
+        """Get project-specific uploads directory path"""
+        return os.path.join(cls.UPLOADS_DIR, project_id)
+    
+    @classmethod
+    def get_project_result_dir(cls, project_id: str) -> str:
+        """Get project-specific result_est directory path"""
+        return os.path.join(cls.RESULT_EST_DIR, project_id)
+    
+    @classmethod
+    def get_project_architecture_dir(cls, project_id: str) -> str:
+        """Get project-specific architecture_diagrams directory path"""
+        return os.path.join(cls.ARCHITECTURE_DIAGRAMS_DIR, project_id)
+    
+    @classmethod
+    def ensure_project_directories(cls, project_id: str) -> Dict[str, str]:
+        """
+        Create project-specific directories if they don't exist
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            Dictionary with paths: {uploads, results, architecture}
+        """
+        paths = {
+            'uploads': cls.get_project_uploads_dir(project_id),
+            'results': cls.get_project_result_dir(project_id),
+            'architecture': cls.get_project_architecture_dir(project_id)
+        }
+        
+        for path in paths.values():
+            os.makedirs(path, exist_ok=True)
+        
+        return paths
     
     # Visualization Configuration
     GRAPH_LAYOUT = "spring"  # spring, circular, random, shell, etc.

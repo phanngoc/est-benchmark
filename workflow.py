@@ -1330,7 +1330,8 @@ def export_enhanced_excel(
     no: str = "001",
     version: str = "1.0",
     issue_date: str = None,
-    md_per_mm: int = 20
+    md_per_mm: int = 20,
+    project_id: str = None
 ) -> Tuple[str, str]:
     """
     Enhanced Excel export với detailed analysis.
@@ -1345,6 +1346,7 @@ def export_enhanced_excel(
         version: Document version (for Sun Asterisk format)
         issue_date: Issue date (for Sun Asterisk format)
         md_per_mm: Man-days per man-month (for Sun Asterisk format)
+        project_id: Project identifier for project-scoped storage
 
     Returns:
         Tuple[str, str]: (Path to exported Excel file, estimation_id)
@@ -1392,14 +1394,15 @@ def export_enhanced_excel(
             }
             data.append(sunasterisk_task)
 
-        # Export using Sun Asterisk exporter
+        # Export using Sun Asterisk exporter (with project_id support)
         sunasterisk_filepath = export_sunasterisk_excel(
             data=data,
             filename=filename,
             no=no,
             version=version,
             issue_date=issue_date,
-            md_per_mm=md_per_mm
+            md_per_mm=md_per_mm,
+            project_id=project_id
         )
         return sunasterisk_filepath, estimation_id
 
@@ -1408,11 +1411,18 @@ def export_enhanced_excel(
     if filename is None:
         filename = f"estimation_result_{estimation_id}.xlsx"
 
+    # Determine result directory (project-scoped or default)
+    if project_id:
+        result_dir = Config.get_project_result_dir(project_id)
+        logger.info(f"Using project-scoped result directory: {result_dir}")
+    else:
+        result_dir = Config.RESULT_EST_DIR
+    
     # Ensure result_est directory exists
-    os.makedirs(Config.RESULT_EST_DIR, exist_ok=True)
+    os.makedirs(result_dir, exist_ok=True)
 
     # Save to result_est directory
-    filepath = os.path.join(Config.RESULT_EST_DIR, filename)
+    filepath = os.path.join(result_dir, filename)
 
     try:
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
@@ -1655,7 +1665,8 @@ class EnhancedEstimationWorkflow:
         no: str = "001",
         version: str = "1.0",
         issue_date: str = None,
-        md_per_mm: int = 20
+        md_per_mm: int = 20,
+        project_id: str = None
     ) -> Tuple[str, str]:
         """
         Enhanced export kết quả ra Excel với SQLite tracking.
@@ -1668,6 +1679,7 @@ class EnhancedEstimationWorkflow:
             version: Document version (for Sun Asterisk format)
             issue_date: Issue date (for Sun Asterisk format)
             md_per_mm: Man-days per man-month (for Sun Asterisk format)
+            project_id: Project identifier for project-scoped storage
 
         Returns:
             Tuple[str, str]: (Path to exported Excel file, estimation_id)
@@ -1692,7 +1704,8 @@ class EnhancedEstimationWorkflow:
             no=no,
             version=version,
             issue_date=issue_date,
-            md_per_mm=md_per_mm
+            md_per_mm=md_per_mm,
+            project_id=project_id
         )
 
         # Save to SQLite tracker
@@ -1712,13 +1725,15 @@ class EnhancedEstimationWorkflow:
                         'average_confidence': result.get('total_confidence', 0.0),
                         'workflow_status': result.get('workflow_status', 'completed'),
                         'project_description': result.get('original_task', '')
-                    }
+                    },
+                    project_id=project_id
                 )
 
                 # Save task details
                 saved_count = tracker.save_estimation_tasks(
                     estimation_id=estimation_id,
-                    tasks_data=estimation_data
+                    tasks_data=estimation_data,
+                    project_id=project_id
                 )
 
                 logger.info(f"✅ Estimation {estimation_id} tracked in SQLite database ({saved_count} tasks)")
