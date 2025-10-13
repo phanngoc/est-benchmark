@@ -13,6 +13,7 @@ from utils.visualization import GraphVisualization
 from workflow import EnhancedEstimationWorkflow
 from utils.logger import init_logging, get_logger
 from utils.architecture_diagram import ArchitectureDiagramGenerator
+from utils.project_manager import get_project_manager
 
 # Initialize logging system
 init_logging(log_dir=Config.LOG_DIR, log_level=Config.LOG_LEVEL)
@@ -56,6 +57,10 @@ if 'project_estimation_result' not in st.session_state:
     st.session_state.project_estimation_result = None
 if 'estimation_in_progress' not in st.session_state:
     st.session_state.estimation_in_progress = False
+if 'selected_project_id' not in st.session_state:
+    st.session_state.selected_project_id = None
+if 'project_manager' not in st.session_state:
+    st.session_state.project_manager = get_project_manager()
 
 def auto_analyze_project_scope(graphrag_handler) -> str:
     """
@@ -184,9 +189,12 @@ def run_project_estimation():
         progress_bar.progress(50)
 
         logger.info("Running estimation workflow with project description and GraphRAG insights")
+        if st.session_state.selected_project_id:
+            logger.info(f"Estimation will be saved to project: {st.session_state.selected_project_id}")
         result = st.session_state.estimation_workflow.run_estimation(
             project_description,
-            graphrag_insights=graphrag_insights
+            graphrag_insights=graphrag_insights,
+            project_id=st.session_state.selected_project_id
         )
 
         if result and result.get('workflow_status') == 'completed':
@@ -252,6 +260,78 @@ def main():
             st.success("🟢 GraphRAG: Ready")
         else:
             st.error("🔴 GraphRAG: Not Initialized")
+
+        st.divider()
+
+        # Project Selector
+        st.markdown("### 📁 Active Project")
+        
+        # Get all projects
+        projects = st.session_state.project_manager.list_projects(status="active")
+        
+        if projects:
+            project_options = {p['project_id']: f"{p['name']}" for p in projects}
+            project_ids = list(project_options.keys())
+            project_labels = list(project_options.values())
+            
+            # Add "No Project" option
+            project_ids.insert(0, None)
+            project_labels.insert(0, "-- No Project Selected --")
+            
+            # Find current index
+            try:
+                current_index = project_ids.index(st.session_state.selected_project_id) if st.session_state.selected_project_id else 0
+            except ValueError:
+                current_index = 0
+            
+            selected_label = st.selectbox(
+                "Select Project",
+                options=project_labels,
+                index=current_index,
+                key="project_selector"
+            )
+            
+            # Update selected project ID
+            selected_index = project_labels.index(selected_label)
+            new_project_id = project_ids[selected_index]
+            
+            # Check if project changed
+            if new_project_id != st.session_state.selected_project_id:
+                st.session_state.selected_project_id = new_project_id
+                # Reinitialize GraphRAG handler and workflow with new project
+                if new_project_id:
+                    st.session_state.graphrag_handler = GraphRAGHandler(
+                        Config.WORKING_DIR,
+                        project_id=new_project_id
+                    )
+                    st.session_state.estimation_workflow = EnhancedEstimationWorkflow(
+                        project_id=new_project_id
+                    )
+                    logger.info(f"Switched to project: {new_project_id}")
+                else:
+                    st.session_state.graphrag_handler = GraphRAGHandler(Config.WORKING_DIR)
+                    st.session_state.estimation_workflow = EnhancedEstimationWorkflow()
+                    logger.info("Switched to no project")
+                st.rerun()
+            
+            # Display selected project info
+            if st.session_state.selected_project_id:
+                project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+                if project:
+                    st.info(f"📊 **{project['name']}**")
+                    if project.get('description'):
+                        st.caption(project['description'][:100] + "..." if len(project['description']) > 100 else project['description'])
+                    
+                    # Show project statistics
+                    stats = st.session_state.project_manager.get_project_statistics(st.session_state.selected_project_id)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("📋 Estimations", stats['total_estimations'])
+                    with col2:
+                        st.metric("💼 Total Effort", f"{stats['total_effort']:.1f} MD")
+        else:
+            st.warning("⚠️ No active projects found. Create one in the Project Management tab.")
+            st.session_state.selected_project_id = None
 
         st.divider()
 
@@ -342,10 +422,18 @@ def main():
         st.rerun()
 
     # Main content area
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History", "📊 Master Data Management", "🏗️ System Architecture"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📁 Upload Files", "🔍 Query", "📋 Project Estimation", "📚 Estimation History", "📊 Master Data Management", "🏗️ System Architecture", "🗂️ Project Management"])
     
     with tab1:
         st.header("📁 Upload và Xử lý Tài liệu")
+        
+        # Show active project
+        if st.session_state.selected_project_id:
+            project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+            if project:
+                st.info(f"📂 Active Project: **{project['name']}**")
+        else:
+            st.warning("⚠️ No project selected. Files will be uploaded to the global workspace.")
         
         # File upload
         uploaded_files = st.file_uploader(
@@ -462,6 +550,14 @@ def main():
     
     with tab2:
         st.header("🔍 Truy vấn GraphRAG")
+        
+        # Show active project
+        if st.session_state.selected_project_id:
+            project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+            if project:
+                st.info(f"📂 Active Project: **{project['name']}** - Queries are scoped to this project's data")
+        else:
+            st.info("🌐 Querying global workspace (no project selected)")
 
         if not st.session_state.graphrag_handler.is_initialized:
             st.warning("⚠️ Vui lòng khởi tạo GraphRAG trước khi truy vấn")
@@ -534,6 +630,14 @@ def main():
 
     with tab3:
         st.header("📋 Project Estimation")
+        
+        # Show active project
+        if st.session_state.selected_project_id:
+            project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+            if project:
+                st.info(f"📂 Active Project: **{project['name']}** - Estimations will be saved to this project")
+        else:
+            st.warning("⚠️ No project selected. Please select a project from the sidebar or create one in the Project Management tab.")
 
         # Check uploads directory
         uploads_check = FileProcessor.check_uploads_directory(Config.UPLOADS_DIR)
@@ -688,14 +792,26 @@ def main():
 
     with tab4:
         st.header("📚 Estimation History")
+        
+        # Show active project
+        if st.session_state.selected_project_id:
+            project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+            if project:
+                st.info(f"📂 Active Project: **{project['name']}** - Showing estimations for this project only")
+        else:
+            st.info("🌐 Showing all estimations (no project filter)")
 
         try:
             from utils.estimation_result_tracker import get_result_tracker
 
+            # Get tracker
             tracker = get_result_tracker()
 
-            # Get statistics
-            stats = tracker.get_statistics()
+            # Get statistics (project-specific if selected)
+            if st.session_state.selected_project_id:
+                stats = st.session_state.project_manager.get_project_statistics(st.session_state.selected_project_id)
+            else:
+                stats = tracker.get_statistics()
 
             # Display summary statistics
             col1, col2, col3, col4 = st.columns(4)
@@ -704,14 +820,19 @@ def main():
             with col2:
                 st.metric("Total Tasks", stats['total_tasks'])
             with col3:
-                st.metric("Avg Effort", f"{stats['avg_effort']:.1f} days")
+                st.metric("Avg Effort", f"{stats['total_effort']:.1f} days" if 'total_effort' in stats else f"{stats['avg_effort']:.1f} days")
             with col4:
                 st.metric("Avg Confidence", f"{stats['avg_confidence']:.0%}")
 
             st.divider()
 
-            # List all estimations
-            estimations = tracker.list_all_estimations(limit=50)
+            # List estimations with project filter
+            if st.session_state.selected_project_id:
+                estimations = tracker.search_estimations(
+                    project_id=st.session_state.selected_project_id
+                )
+            else:
+                estimations = tracker.list_all_estimations(limit=50)
 
             if estimations:
                 st.subheader("📋 Recent Estimations")
@@ -814,6 +935,9 @@ def main():
 
     with tab5:
         st.header("📊 Master Data Management")
+        
+        # Master data is typically global, but we can show the project context
+        st.info("ℹ️ Master data is shared across all projects for consistency")
 
         try:
             from utils.estimation_history_manager import get_history_manager
@@ -1271,6 +1395,12 @@ def main():
 
     with tab6:
         st.header("🏗️ System Architecture Diagram")
+        
+        # Show active project
+        if st.session_state.selected_project_id:
+            project = st.session_state.project_manager.get_project(st.session_state.selected_project_id)
+            if project:
+                st.info(f"📂 Active Project: **{project['name']}**")
 
         try:
             import sqlite3
@@ -1278,8 +1408,14 @@ def main():
 
             tracker = get_result_tracker()
 
-            # Get latest estimation
-            estimations = tracker.list_all_estimations(limit=1)
+            # Get latest estimation (filtered by project if selected)
+            if st.session_state.selected_project_id:
+                estimations = tracker.search_estimations(
+                    project_id=st.session_state.selected_project_id
+                )
+                estimations = estimations[:1] if estimations else []
+            else:
+                estimations = tracker.list_all_estimations(limit=1)
 
             if not estimations:
                 st.info("📭 Chưa có estimation nào. Vui lòng chạy Project Estimation trước.")
@@ -1424,6 +1560,282 @@ def main():
         except Exception as e:
             st.error(f"❌ Error in System Architecture tab: {str(e)}")
             logger.exception(f"System Architecture tab error: {e}")
+
+    with tab7:
+        st.header("🗂️ Project Management")
+        
+        try:
+            # Project Management UI
+            st.markdown("""
+            Manage your estimation projects here. Each project can have multiple estimation runs and tasks.
+            """)
+            
+            # Create/Edit Project Section
+            st.subheader("➕ Create New Project")
+            
+            with st.form("create_project_form"):
+                new_project_name = st.text_input(
+                    "Project Name *",
+                    placeholder="e.g., E-commerce Platform",
+                    help="Enter a descriptive name for your project"
+                )
+                new_project_description = st.text_area(
+                    "Project Description",
+                    placeholder="Brief description of the project...",
+                    height=100,
+                    help="Optional detailed description"
+                )
+                new_project_status = st.selectbox(
+                    "Status",
+                    options=["active", "on-hold", "completed", "archived"],
+                    index=0
+                )
+                
+                submitted = st.form_submit_button("✅ Create Project", type="primary")
+                
+                if submitted:
+                    if not new_project_name:
+                        st.error("❌ Project name is required!")
+                    else:
+                        try:
+                            project_id = st.session_state.project_manager.create_project(
+                                name=new_project_name,
+                                description=new_project_description,
+                                status=new_project_status
+                            )
+                            st.success(f"✅ Project created successfully! ID: {project_id}")
+                            logger.info(f"Created new project: {project_id} - {new_project_name}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error creating project: {str(e)}")
+                            logger.error(f"Failed to create project: {e}")
+            
+            st.divider()
+            
+            # List and Manage Existing Projects
+            st.subheader("📋 Existing Projects")
+            
+            # Filter options
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                search_keyword = st.text_input(
+                    "🔍 Search Projects",
+                    placeholder="Search by name or description...",
+                    key="project_search"
+                )
+            with col2:
+                filter_status = st.selectbox(
+                    "Filter by Status",
+                    options=["all", "active", "on-hold", "completed", "archived"],
+                    index=0,
+                    key="project_filter_status"
+                )
+            
+            # Fetch projects based on filters
+            if search_keyword:
+                projects = st.session_state.project_manager.search_projects(
+                    keyword=search_keyword,
+                    status=filter_status if filter_status != "all" else None
+                )
+            else:
+                projects = st.session_state.project_manager.list_projects(
+                    status=filter_status if filter_status != "all" else None
+                )
+            
+            if not projects:
+                st.info("ℹ️ No projects found. Create your first project above!")
+            else:
+                st.markdown(f"**Found {len(projects)} project(s)**")
+                
+                # Display projects in expandable cards
+                for project in projects:
+                    with st.expander(
+                        f"**{project['name']}** ({project['status']}) - {project['project_id'][:12]}...",
+                        expanded=False
+                    ):
+                        # Project details
+                        st.markdown(f"**Project ID:** `{project['project_id']}`")
+                        st.markdown(f"**Status:** `{project['status']}`")
+                        st.markdown(f"**Created:** {project['created_at']}")
+                        st.markdown(f"**Updated:** {project['updated_at']}")
+                        
+                        if project.get('description'):
+                            st.markdown(f"**Description:**")
+                            st.text_area(
+                                "Description",
+                                value=project['description'],
+                                height=100,
+                                disabled=True,
+                                key=f"desc_{project['project_id']}",
+                                label_visibility="collapsed"
+                            )
+                        
+                        # Get project statistics
+                        stats = st.session_state.project_manager.get_project_statistics(project['project_id'])
+                        
+                        st.markdown("**📊 Project Statistics:**")
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Estimations", stats['total_estimations'])
+                        with col2:
+                            st.metric("Tasks", stats['total_tasks'])
+                        with col3:
+                            st.metric("Total Effort", f"{stats['total_effort']:.1f} MD")
+                        with col4:
+                            st.metric("Avg Confidence", f"{stats['avg_confidence']:.0%}")
+                        
+                        st.divider()
+                        
+                        # Action buttons
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            # Edit button
+                            if st.button(
+                                "✏️ Edit",
+                                key=f"edit_{project['project_id']}",
+                                use_container_width=True
+                            ):
+                                st.session_state[f"editing_{project['project_id']}"] = True
+                                st.rerun()
+                        
+                        with col2:
+                            # Set as active project button
+                            if st.button(
+                                "📌 Set Active",
+                                key=f"activate_{project['project_id']}",
+                                use_container_width=True,
+                                disabled=(st.session_state.selected_project_id == project['project_id'])
+                            ):
+                                st.session_state.selected_project_id = project['project_id']
+                                st.session_state.graphrag_handler = GraphRAGHandler(
+                                    Config.WORKING_DIR,
+                                    project_id=project['project_id']
+                                )
+                                st.session_state.estimation_workflow = EnhancedEstimationWorkflow(
+                                    project_id=project['project_id']
+                                )
+                                st.success(f"✅ Activated project: {project['name']}")
+                                logger.info(f"Activated project: {project['project_id']}")
+                                st.rerun()
+                        
+                        with col3:
+                            # Delete button
+                            if st.button(
+                                "🗑️ Delete",
+                                key=f"delete_{project['project_id']}",
+                                use_container_width=True,
+                                type="secondary"
+                            ):
+                                st.session_state[f"confirm_delete_{project['project_id']}"] = True
+                                st.rerun()
+                        
+                        # Edit form (shown when edit is clicked)
+                        if st.session_state.get(f"editing_{project['project_id']}", False):
+                            st.markdown("---")
+                            st.markdown("**✏️ Edit Project:**")
+                            
+                            with st.form(f"edit_form_{project['project_id']}"):
+                                edit_name = st.text_input(
+                                    "Project Name",
+                                    value=project['name'],
+                                    key=f"edit_name_{project['project_id']}"
+                                )
+                                edit_description = st.text_area(
+                                    "Description",
+                                    value=project.get('description', ''),
+                                    height=100,
+                                    key=f"edit_desc_{project['project_id']}"
+                                )
+                                edit_status = st.selectbox(
+                                    "Status",
+                                    options=["active", "on-hold", "completed", "archived"],
+                                    index=["active", "on-hold", "completed", "archived"].index(project['status']),
+                                    key=f"edit_status_{project['project_id']}"
+                                )
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True):
+                                        try:
+                                            success = st.session_state.project_manager.update_project(
+                                                project_id=project['project_id'],
+                                                name=edit_name,
+                                                description=edit_description,
+                                                status=edit_status
+                                            )
+                                            if success:
+                                                st.success("✅ Project updated successfully!")
+                                                logger.info(f"Updated project: {project['project_id']}")
+                                                st.session_state.pop(f"editing_{project['project_id']}", None)
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ Failed to update project")
+                                        except Exception as e:
+                                            st.error(f"❌ Error: {str(e)}")
+                                            logger.error(f"Failed to update project: {e}")
+                                
+                                with col2:
+                                    if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                        st.session_state.pop(f"editing_{project['project_id']}", None)
+                                        st.rerun()
+                        
+                        # Delete confirmation (shown when delete is clicked)
+                        if st.session_state.get(f"confirm_delete_{project['project_id']}", False):
+                            st.markdown("---")
+                            st.warning(f"⚠️ **Confirm Deletion**")
+                            st.markdown(f"Are you sure you want to delete **{project['name']}**?")
+                            
+                            if stats['total_estimations'] > 0:
+                                st.error(
+                                    f"⚠️ This project has **{stats['total_estimations']} estimation(s)** "
+                                    f"and **{stats['total_tasks']} task(s)**. All associated data will be deleted!"
+                                )
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button(
+                                    "✅ Yes, Delete",
+                                    key=f"confirm_yes_{project['project_id']}",
+                                    type="primary",
+                                    use_container_width=True
+                                ):
+                                    try:
+                                        # Delete with cascade
+                                        success = st.session_state.project_manager.delete_project(
+                                            project_id=project['project_id'],
+                                            cascade=True
+                                        )
+                                        if success:
+                                            st.success(f"✅ Project '{project['name']}' deleted successfully!")
+                                            logger.info(f"Deleted project: {project['project_id']}")
+                                            
+                                            # Clear selection if deleted project was active
+                                            if st.session_state.selected_project_id == project['project_id']:
+                                                st.session_state.selected_project_id = None
+                                                st.session_state.graphrag_handler = GraphRAGHandler(Config.WORKING_DIR)
+                                                st.session_state.estimation_workflow = EnhancedEstimationWorkflow()
+                                            
+                                            st.session_state.pop(f"confirm_delete_{project['project_id']}", None)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Failed to delete project")
+                                    except Exception as e:
+                                        st.error(f"❌ Error: {str(e)}")
+                                        logger.error(f"Failed to delete project: {e}")
+                            
+                            with col2:
+                                if st.button(
+                                    "❌ Cancel",
+                                    key=f"confirm_no_{project['project_id']}",
+                                    use_container_width=True
+                                ):
+                                    st.session_state.pop(f"confirm_delete_{project['project_id']}", None)
+                                    st.rerun()
+        
+        except Exception as e:
+            st.error(f"❌ Error in Project Management tab: {str(e)}")
+            logger.exception(f"Project Management tab error: {e}")
 
 if __name__ == "__main__":
     main()

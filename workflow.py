@@ -17,7 +17,7 @@ import os
 import json
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Any, TypedDict, Annotated, Tuple
+from typing import List, Dict, Any, TypedDict, Annotated, Tuple, Optional
 import operator
 from dataclasses import dataclass, field
 import uuid
@@ -146,6 +146,7 @@ class EnhancedOrchestratorState(TypedDict):
     Enhanced state cho Orchestrator với GraphRAG integration
     UPDATED: Keeps validated_results for backward compatibility with Option 3 (conditional validation)
     """
+    project_id: str  # Project identifier for project-scoped operations
     original_task: str  # Task gốc từ user
     graphrag_insights: List[Dict[str, Any]]  # Insights từ GraphRAG queries
 
@@ -655,9 +656,13 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     # NEW: Search for similar historical estimations for few-shot prompting
     from utils.estimation_history_manager import get_history_manager
 
+    # Extract project_id from worker_input (passed from state)
+    project_id = worker_input.get('project_id', None)
+
     few_shot_context = ""
     try:
-        history_manager = get_history_manager()
+        # Get project-scoped history manager
+        history_manager = get_history_manager(project_id=project_id)
 
         # Create search query from task data
         search_description = task_breakdown.get('description', '')
@@ -665,6 +670,8 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         search_role = task_breakdown.get('role')
         
         logger.debug(f"   🔍 Searching historical data with:")
+        if project_id:
+            logger.debug(f"     - Project ID: {project_id}")
         logger.debug(f"     - Description: {search_description[:100]}...")
         logger.debug(f"     - Category: {search_category}")
         logger.debug(f"     - Role: {search_role}")
@@ -1038,6 +1045,7 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công breakdown workers cho mỗi category
     """
     categories = state.get('main_categories', [])
+    project_id = state.get('project_id', None)
     logger.info(f"📋 Đang phân công breakdown workers cho {len(categories)} categories")
 
     sends = []
@@ -1046,7 +1054,8 @@ def assign_breakdown_workers(state: EnhancedOrchestratorState) -> List[Send]:
             "task_breakdown_worker",
             {
                 "category_focus": category,
-                "original_task": state['original_task']
+                "original_task": state['original_task'],
+                "project_id": project_id  # Pass project_id to worker
             }
         )
         sends.append(send)
@@ -1058,6 +1067,7 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công estimation workers cho mỗi breakdown task
     """
     breakdown_results = state.get('breakdown_results', [])
+    project_id = state.get('project_id', None)
     logger.info(f"📋 Đang phân công estimation workers cho {len(breakdown_results)} tasks")
 
     sends = []
@@ -1065,7 +1075,8 @@ def assign_estimation_workers(state: EnhancedOrchestratorState) -> List[Send]:
         send = Send(
             "estimation_worker",
             {
-                "task_breakdown": task_breakdown
+                "task_breakdown": task_breakdown,
+                "project_id": project_id  # Pass project_id to worker
             }
         )
         sends.append(send)
@@ -1078,6 +1089,7 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
     Phân công validation workers CHỈ cho tasks cần validation
     """
     estimation_results = state.get('estimation_results', [])
+    project_id = state.get('project_id', None)
 
     # Filter tasks that need validation
     tasks_needing_validation = [task for task in estimation_results if should_validate(task)]
@@ -1090,7 +1102,8 @@ def assign_validation_workers(state: EnhancedOrchestratorState) -> List[Send]:
         send = Send(
             "validation_worker",
             {
-                "estimation_task": estimation_task
+                "estimation_task": estimation_task,
+                "project_id": project_id  # Pass project_id to worker
             }
         )
         sends.append(send)
@@ -1546,7 +1559,15 @@ class EnhancedEstimationWorkflow:
     Enhanced Estimation Workflow với specialized workers
     """
 
-    def __init__(self):
+    def __init__(self, project_id: Optional[str] = None):
+        """
+        Initialize Enhanced Estimation Workflow
+        
+        Args:
+            project_id: Optional project identifier for project-scoped operations.
+                       When provided, all history and tracking will be project-specific.
+        """
+        self.project_id = project_id
         self.workflow = None
         self.memory = MemorySaver()
         self._build_workflow()
@@ -1597,7 +1618,7 @@ class EnhancedEstimationWorkflow:
 
         logger.info("✅ Enhanced Estimation Workflow đã được build thành công!")
 
-    def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = None) -> Dict[str, Any]:
+    def run_estimation(self, task_description: str, graphrag_insights=None, thread_id: str = None, project_id: str = None) -> Dict[str, Any]:
         """
         Chạy enhanced estimation workflow với auto-generated estimation_id
 
@@ -1605,10 +1626,15 @@ class EnhancedEstimationWorkflow:
             task_description: Project description to estimate
             graphrag_insights: Optional GraphRAG insights
             thread_id: Optional custom thread ID (auto-generated if None)
+            project_id: Optional project identifier for project-scoped operations.
+                       If not provided, uses the instance's project_id.
 
         Returns:
             Dict with estimation results including estimation_id
         """
+        # Use provided project_id or fall back to instance project_id
+        effective_project_id = project_id or self.project_id
+        
         # Generate estimation_id (timestamp-based)
         estimation_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1617,9 +1643,12 @@ class EnhancedEstimationWorkflow:
             thread_id = f"estimation_{estimation_id}"
 
         logger.info(f"🚀 Bắt đầu Enhanced Estimation Workflow (ID: {estimation_id})")
+        if effective_project_id:
+            logger.info(f"   Project ID: {effective_project_id}")
         logger.info(f"   Task: {task_description[:100]}...")
 
         initial_state = {
+            "project_id": effective_project_id or "",  # Add project_id to state
             "estimation_id": estimation_id,  # NEW: Add estimation_id to state
             "original_task": task_description,
             "graphrag_insights": graphrag_insights or [],
@@ -1640,8 +1669,9 @@ class EnhancedEstimationWorkflow:
             config = {"configurable": {"thread_id": thread_id}}
             result = self.workflow.invoke(initial_state, config=config)
 
-            # Ensure estimation_id is in result
+            # Ensure estimation_id and project_id are in result
             result['estimation_id'] = estimation_id
+            result['project_id'] = effective_project_id or ""
 
             logger.info(f"🎉 Enhanced Workflow hoàn thành (ID: {estimation_id})")
             logger.info(f"   Status: {result.get('workflow_status', 'unknown')}")
@@ -1653,6 +1683,7 @@ class EnhancedEstimationWorkflow:
             logger.error(f"❌ Lỗi khi chạy Enhanced Workflow (ID: {estimation_id}): {e}")
             return {
                 "estimation_id": estimation_id,
+                "project_id": effective_project_id or "",
                 "workflow_status": "failed",
                 "error": str(e)
             }
@@ -1679,13 +1710,17 @@ class EnhancedEstimationWorkflow:
             version: Document version (for Sun Asterisk format)
             issue_date: Issue date (for Sun Asterisk format)
             md_per_mm: Man-days per man-month (for Sun Asterisk format)
-            project_id: Project identifier for project-scoped storage
+            project_id: Project identifier for project-scoped storage.
+                       If not provided, uses result's project_id or instance's project_id.
 
         Returns:
             Tuple[str, str]: (Path to exported Excel file, estimation_id)
         """
         estimation_data = result.get('final_estimation_data', [])
         estimation_id = result.get('estimation_id', '')
+        
+        # Use provided project_id, or fall back to result's project_id, or instance's project_id
+        effective_project_id = project_id or result.get('project_id') or self.project_id
 
         if not estimation_data:
             logger.warning("⚠️ Không có dữ liệu để export")
@@ -1694,7 +1729,7 @@ class EnhancedEstimationWorkflow:
         df = pd.DataFrame(estimation_data)
         validation_summary = result.get('validation_summary', {})
 
-        # Export to Excel
+        # Export to Excel with project-scoped file path
         filepath, estimation_id = export_enhanced_excel(
             df=df,
             validation_summary=validation_summary,
@@ -1705,17 +1740,17 @@ class EnhancedEstimationWorkflow:
             version=version,
             issue_date=issue_date,
             md_per_mm=md_per_mm,
-            project_id=project_id
+            project_id=effective_project_id
         )
 
-        # Save to SQLite tracker
+        # Save to SQLite tracker with project_id
         if filepath and estimation_id:
             try:
                 from utils.estimation_result_tracker import get_result_tracker
 
                 tracker = get_result_tracker()
 
-                # Create estimation run entry
+                # Create estimation run entry with project_id
                 tracker.create_estimation_run(
                     estimation_id=estimation_id,
                     file_path=filepath,
@@ -1726,17 +1761,20 @@ class EnhancedEstimationWorkflow:
                         'workflow_status': result.get('workflow_status', 'completed'),
                         'project_description': result.get('original_task', '')
                     },
-                    project_id=project_id
+                    project_id=effective_project_id
                 )
 
-                # Save task details
+                # Save task details with project_id
                 saved_count = tracker.save_estimation_tasks(
                     estimation_id=estimation_id,
                     tasks_data=estimation_data,
-                    project_id=project_id
+                    project_id=effective_project_id
                 )
 
-                logger.info(f"✅ Estimation {estimation_id} tracked in SQLite database ({saved_count} tasks)")
+                if effective_project_id:
+                    logger.info(f"✅ Estimation {estimation_id} tracked in SQLite database for project {effective_project_id} ({saved_count} tasks)")
+                else:
+                    logger.info(f"✅ Estimation {estimation_id} tracked in SQLite database ({saved_count} tasks)")
 
             except Exception as e:
                 logger.error(f"❌ Failed to save to SQLite tracker: {e}")
