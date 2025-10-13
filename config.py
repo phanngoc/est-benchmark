@@ -64,6 +64,13 @@ class Config:
     FEW_SHOT_SIMILARITY_THRESHOLD = 0.6  # Minimum similarity score (0-1)
     FEW_SHOT_MAX_EXAMPLES = 5  # Maximum number of historical examples
 
+    # Project Management Configuration
+    DEFAULT_PROJECT_STATUS = "active"  # Default status for new projects: active, completed, archived, on-hold
+    PROJECT_STATUS_OPTIONS = ["active", "completed", "archived", "on-hold"]  # Valid project status values
+    AUTO_CREATE_DEFAULT_PROJECT = True  # Auto-create a default project if none exists
+    DEFAULT_PROJECT_NAME = "Default Project"  # Name for the auto-created default project
+    DEFAULT_PROJECT_DESCRIPTION = "Default project for estimations without specific project assignment"
+
     @classmethod
     def validate_config(cls):
         """Validate configuration settings"""

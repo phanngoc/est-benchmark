@@ -42,17 +42,31 @@ class EstimationResultTracker:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Create projects table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+                project_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active'
+            )
+        """)
+
         # Create estimation_runs table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS estimation_runs (
                 estimation_id TEXT PRIMARY KEY,
+                project_id TEXT,
                 file_path TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 total_effort REAL,
                 total_tasks INTEGER,
                 average_confidence REAL,
                 workflow_status TEXT,
-                project_description TEXT
+                project_description TEXT,
+                FOREIGN KEY (project_id) REFERENCES projects(project_id)
             )
         """)
 
@@ -61,6 +75,7 @@ class EstimationResultTracker:
             CREATE TABLE IF NOT EXISTS estimation_tasks (
                 task_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 estimation_id TEXT NOT NULL,
+                project_id TEXT,
                 id TEXT,
                 category TEXT,
                 role TEXT,
@@ -78,14 +93,30 @@ class EstimationResultTracker:
                 dependencies TEXT,
                 risk_factors TEXT,
                 assumptions TEXT,
-                FOREIGN KEY (estimation_id) REFERENCES estimation_runs(estimation_id)
+                FOREIGN KEY (estimation_id) REFERENCES estimation_runs(estimation_id),
+                FOREIGN KEY (project_id) REFERENCES projects(project_id)
             )
         """)
 
         # Create indexes for performance
         cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_projects_status
+            ON projects(status)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_estimation_runs_project_id
+            ON estimation_runs(project_id)
+        """)
+
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_estimation_id
             ON estimation_tasks(estimation_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_estimation_tasks_project_id
+            ON estimation_tasks(project_id)
         """)
 
         cursor.execute("""
