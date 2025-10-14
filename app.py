@@ -254,15 +254,6 @@ def main():
     with st.sidebar:
         st.header("⚙️ Cấu hình")
 
-        # System Status Indicator
-        st.markdown("### 📊 System Status")
-        if st.session_state.graphrag_handler.is_initialized:
-            st.success("🟢 GraphRAG: Ready")
-        else:
-            st.error("🔴 GraphRAG: Not Initialized")
-
-        st.divider()
-
         # Project Selector
         st.markdown("### 📁 Active Project")
         

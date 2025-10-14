@@ -39,15 +39,25 @@ class GraphRAGHandler:
         Args:
             working_dir: Base working directory for GraphRAG
             project_id: Optional project ID for isolated workspace. 
-                       If provided, creates project-specific subdirectory.
+                       If provided, uses a separate workspace directory.
         """
         self.base_working_dir = working_dir
         self.project_id = project_id
         
         # Construct project-specific working directory
+        # Important: fast_graphrag scans working_dir for numeric checkpoint directories
+        # and fails if it finds non-numeric directories (except those starting with "0__err_")
+        # Solution: Use completely separate directories for projects
         if project_id:
-            self.working_dir = os.path.join(working_dir, project_id)
+            # Use a parallel directory structure for projects
+            # Instead of: graphrag_workspace/projects/proj_id
+            # Use: graphrag_workspace_projects/proj_id
+            base_dir = os.path.dirname(working_dir) if os.path.dirname(working_dir) else "."
+            base_name = os.path.basename(working_dir)
+            projects_base = os.path.join(base_dir, f"{base_name}_projects")
+            self.working_dir = os.path.join(projects_base, project_id)
             logger.info(f"Project-scoped GraphRAG: project_id={project_id}")
+            logger.info(f"Project workspace: {self.working_dir}")
         else:
             self.working_dir = working_dir
             logger.info("Global GraphRAG workspace (no project_id)")
@@ -58,6 +68,28 @@ class GraphRAGHandler:
         # Tạo working directory nếu chưa có
         os.makedirs(self.working_dir, exist_ok=True)
         logger.info(f"GraphRAGHandler initialized with working_dir: {self.working_dir}")
+    
+    def _cleanup_invalid_checkpoint_dirs(self, working_dir: str) -> None:
+        """
+        Clean up invalid checkpoint directories that would cause fast_graphrag to fail.
+        fast_graphrag expects checkpoint directories to be named with integers only.
+        """
+        try:
+            if not os.path.exists(working_dir):
+                return
+                
+            for entry in os.scandir(working_dir):
+                if entry.is_dir() and not entry.name.startswith("0__err_"):
+                    # Check if directory name is not a valid integer
+                    try:
+                        int(entry.name)
+                    except ValueError:
+                        # This is an invalid checkpoint directory
+                        # Don't delete it, just log a warning
+                        logger.warning(f"Found non-numeric directory in GraphRAG workspace: {entry.name}")
+                        logger.warning(f"This may cause initialization issues. Consider moving it to 'projects/' subdirectory.")
+        except Exception as e:
+            logger.error(f"Error during cleanup check: {str(e)}")
     
     def initialize(self, domain: str, entity_types: List[str], example_queries: List[str]) -> bool:
         """
@@ -79,6 +111,9 @@ class GraphRAGHandler:
         try:
             # Ensure project-specific directory exists
             os.makedirs(self.working_dir, exist_ok=True)
+            
+            # Clean up any invalid checkpoint directories that could cause issues
+            self._cleanup_invalid_checkpoint_dirs(self.working_dir)
             
             if self.project_id:
                 logger.info(f"Initializing GraphRAG for project: {self.project_id}")
