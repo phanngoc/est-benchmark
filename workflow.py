@@ -37,47 +37,113 @@ from config import Config
 logger = get_logger(__name__)
 
 # ========================
+# LLM Response Dump Helper
+# ========================
+
+def dump_llm_response(worker_name: str, task_info: str, raw_response: str, parsed_result: Any = None, project_id: str = None):
+    """
+    Dump LLM response to file for debugging.
+    
+    Args:
+        worker_name: Name of the worker (orchestrator, breakdown_worker, estimation_worker, validation_worker)
+        task_info: Info about the task being processed
+        raw_response: Raw LLM response content
+        parsed_result: Parsed JSON result (if available)
+        project_id: Project identifier for project-scoped storage
+    """
+    try:
+        # Determine logs directory (project-scoped or default)
+        if project_id:
+            logs_dir = os.path.join(Config.LOG_DIR, project_id, 'llm_responses')
+        else:
+            logs_dir = os.path.join(Config.LOG_DIR, 'llm_responses')
+        
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Create timestamped filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{worker_name}_{timestamp}.json"
+        filepath = os.path.join(logs_dir, filename)
+        
+        # Prepare dump data
+        dump_data = {
+            'timestamp': datetime.now().isoformat(),
+            'worker_name': worker_name,
+            'task_info': task_info,
+            'raw_response': raw_response,
+            'raw_response_length': len(raw_response),
+            'parsed_result': parsed_result,
+            'parsing_success': parsed_result is not None
+        }
+        
+        # Write to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(dump_data, f, indent=2, ensure_ascii=False)
+        
+        logger.debug(f"   💾 Dumped LLM response to: {filepath}")
+        
+    except Exception as e:
+        logger.warning(f"   ⚠️ Failed to dump LLM response: {e}")
+
+# ========================
 # Enhanced Data Models
 # ========================
 
 @dataclass
 class TaskBreakdown:
-    """Enhanced model cho việc break task với validation"""
+    """
+    Enhanced model cho việc break task với validation.
+    
+    ARCHITECTURE:
+    - Each task represents ONE functional/business requirement
+    - Task name describes business logic (e.g., "User Login Feature", "Product Search")
+    - Effort is broken down by ROLE × TASK TYPE in separate columns:
+      * backend_implement, backend_fixbug, backend_unittest
+      * frontend_implement, frontend_fixbug, frontend_unittest
+      * responsive_implement
+      * testing_implement (QA manual testing)
+    - Export shows ONE row per task with all role efforts in columns
+    - Internal breakdown (BE/FE/QA analysis) is used for accuracy but aggregated on export
+    """
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     category: str = ""  # Business logic category (Authentication, User Management, etc.)
-    role: str = ""  # Backend, Frontend, QA, Infra
-    parent_task: str = ""
-    sub_task: str = ""
-    description: str = ""
-    estimation_manday: float = 0.0  # Total estimation (sum of role-specific estimations)
+    parent_task: str = ""  # Parent functional requirement (if hierarchical)
+    task_name: str = ""  # Business logic task name (e.g., "User Login Feature")
+    description: str = ""  # Detailed description covering all aspects (BE + FE + QA)
+    estimation_manday: float = 0.0  # Total estimation (sum of ALL role-specific efforts)
     complexity: str = "Medium"  # Low, Medium, High
     priority: str = "Medium"  # Low, Medium, High
     confidence_level: float = 0.8  # 0.0 - 1.0
 
     # Sun Asterisk-specific fields
-    sub_no: str = ""  # Sub.No (e.g., "1.1", "2.3")
-    task_type: str = "Implement"  # Task type (Implement, FixBug, Unit Test, Analysis)
+    sub_no: str = ""  # Sub.No format: X.Y (X=category, Y=task number)
     premise: str = ""  # Premise
     remark: str = ""  # 備考 Remark
     note: str = ""  # Note
-
-    # Detailed effort breakdown by task type per role
+    
+    # Detailed effort breakdown by ROLE × TASK TYPE
+    # Backend efforts
     backend_implement: float = 0.0
     backend_fixbug: float = 0.0
     backend_unittest: float = 0.0
+    
+    # Frontend efforts
     frontend_implement: float = 0.0
     frontend_fixbug: float = 0.0
     frontend_unittest: float = 0.0
+    
+    # Responsive design
     responsive_implement: float = 0.0
+    
+    # QA/Testing efforts (manual testing)
     testing_implement: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
             'category': self.category,
-            'role': self.role,
             'parent_task': self.parent_task,
-            'sub_task': self.sub_task,
+            'task_name': self.task_name,
             'description': self.description,
             'estimation_manday': self.estimation_manday,
             'complexity': self.complexity,
@@ -85,10 +151,10 @@ class TaskBreakdown:
             'confidence_level': self.confidence_level,
             # Sun Asterisk fields
             'sub_no': self.sub_no,
-            'task_type': self.task_type,
             'premise': self.premise,
             'remark': self.remark,
             'note': self.note,
+            # Role-specific effort breakdown
             'backend_implement': self.backend_implement,
             'backend_fixbug': self.backend_fixbug,
             'backend_unittest': self.backend_unittest,
@@ -100,13 +166,12 @@ class TaskBreakdown:
         }
 
     def to_sunasterisk_format(self) -> Dict[str, Any]:
-        """Convert to Sun Asterisk Excel format."""
+        """Convert to Sun Asterisk Excel format - each task is one row with all role efforts."""
         return {
             'category': self.category,
             'parent_task': self.parent_task,
-            'sub_task': self.sub_task,
+            'sub_task': self.task_name,  # Business logic task name
             'sub_no': self.sub_no,
-            'task': self.task_type,
             'premise': self.premise,
             'remark': self.remark,
             'backend': {
@@ -221,104 +286,308 @@ class EnhancedEstimationLLM:
         return """
         Bạn là một Technical Lead chuyên gia trong việc break down technical requirements thành các task cụ thể.
 
+        🎯 KIẾN TRÚC MỚI - BUSINESS LOGIC TASK BREAKDOWN:
+        ===================================================
+        MỖI TASK ĐẠI DIỆN CHO MỘT FUNCTIONAL/BUSINESS REQUIREMENT:
+        
+        ✅ Task nên được chia theo BUSINESS LOGIC, KHÔNG phải theo technical roles (BE/FE/QA)
+        ✅ Task name mô tả chức năng nghiệp vụ: "User Login", "Product Search", "Order Checkout"
+        ✅ Description bao gồm TẤT CẢ các khía cạnh:
+           - Backend requirements (API, business logic, database)
+           - Frontend requirements (UI, user interactions, components)
+           - Testing considerations (test cases, edge cases)
+        
+        📊 EFFORT ESTIMATION SẼ ĐƯỢC XỬ LÝ SAU:
+        =========================================
+        - Estimation Worker sẽ phân tích task và estimate effort cho TỪNG ROLE
+        - Kết quả export sẽ có các COLUMNS riêng cho mỗi role:
+          * Backend Implement, Backend FixBug, Backend Unit Test
+          * Frontend Implement, Frontend FixBug, Frontend Unit Test
+          * Frontend Responsive
+          * Testing Implement (QA manual)
+        - Việc breakdown nội bộ theo role CHỈ để estimation chính xác
+        - Export file thì 1 task = 1 row với effort columns cho tất cả roles
+
         Nhiệm vụ của bạn:
         1. Sử dụng thông tin từ GraphRAG để hiểu sâu về requirements
-        2. Break down category được giao thành parent tasks và sub tasks
-        3. Tạo description chi tiết cho mỗi task
-        4. XÁC ĐỊNH ROLE CHO TỪNG TASK (Backend, Frontend, QA, Infra)
-        5. Xác định dependencies và priority
-        6. Tạo sub_no (Sub.No) cho mỗi task theo pattern phân cấp (1.1, 1.2, 2.1, etc.)
-        7. Xác định feature/screen name và reference document
-        8. 🚨 QUAN TRỌNG: ĐẢM BẢO MỖI TASK <21H (KHÔNG QUÁ 2.5 MANDAYS)
+        2. Break down category được giao thành FUNCTIONAL tasks theo business logic
+        3. Tạo description chi tiết bao gồm CẢ 3 KHÍA CẠNH (Backend, Frontend, Testing)
+        4. Xác định dependencies và priority
+        5. Tạo sub_no theo pattern: X.Y (X=category number, Y=task number trong category)
+        6. 🚨 QUAN TRỌNG: Task nên có kích thước vừa phải (total effort ~3-10 mandays cho tất cả roles)
 
-        STRICT TASK SIZE CONSTRAINTS (1 manday = 7 giờ):
-        ⚠️ TUYỆT ĐỐI KHÔNG TẠO TASK >2.5 MANDAYS (~17.5 GIỜ)
-        - Simple tasks: 0.5-1 manday (3.5-7h) - CRUD đơn giản, UI components cơ bản
-        - Medium tasks: 1-2 mandays (7-14h) - Business logic vừa phải, API integration
-        - Complex tasks: 2-2.5 mandays (14-17.5h) - Logic phức tạp, nhiều components
-        - ❌ NEVER: >2.5 mandays - NẾU TASK LỚN HƠN → PHẢI CHIA NHỎ THÀNH NHIỀU SUB-TASKS
+        TASK SIZE GUIDELINES (total effort across all roles):
+        ======================================================
+        - Small tasks: 2-5 mandays total - Simple CRUD, basic UI, straightforward testing
+        - Medium tasks: 5-10 mandays total - Moderate business logic, integration, comprehensive testing
+        - Large tasks: 10-15 mandays total - Complex features, multiple integrations, extensive testing
+        - ⚠️ Nếu task quá lớn (>15 mandays) → CHIA NHỎ thành nhiều tasks
 
-        Task Size Examples (GOOD ✅ vs BAD ❌):
-        ✅ GOOD - Right size (<21h each):
-          - "Implement JWT token generation logic" (~1-1.5 mandays)
-          - "Create login API endpoint with validation" (~1 manday)
-          - "Design user database schema with indexes" (~1 manday)
-          - "Build login form UI component with validation" (~1-1.5 mandays)
-          - "Write unit tests for authentication service" (~0.5-1 manday)
+        🔥 BUSINESS LOGIC BREAKDOWN EXAMPLES:
+        ======================================
+        
+        📝 EXAMPLE 1: User Login Feature
+        ---------------------------------
+        ✅ TASK 1.1:
+           - sub_no: "1.1"
+           - task_name: "User Login Feature"
+           - parent_task: "" (or "Authentication System" if hierarchical)
+           - category: "Authentication & Authorization"
+           - description: "Complete user login functionality including:
+             
+             BACKEND: Implement POST /api/auth/login endpoint with email/password validation, 
+             JWT token generation, user authentication, error handling, rate limiting.
+             Database queries for user lookup, session management.
+             
+             FRONTEND: Create login form component with email/password inputs, client-side validation, 
+             error message display, loading states, remember me functionality, forgot password link.
+             Responsive design for mobile/tablet/desktop.
+             
+             TESTING: Manual test cases covering: valid credentials login, invalid email/password, 
+             empty fields, SQL injection attempts, XSS prevention, session timeout, 
+             concurrent login attempts, remember me functionality (10-12 test cases)."
+           - complexity: "Medium"
+           - priority: "High"
+           - premise: "Database schema exists, JWT library available, design mockups ready"
+           - remark: "Use bcrypt for password hashing, JWT for authentication"
+           - note: "Include rate limiting to prevent brute force attacks"
+        
+        📝 EXAMPLE 2: Product Search & Filtering
+        ------------------------------------------
+        ✅ TASK 2.1:
+           - sub_no: "2.1"
+           - task_name: "Product Search & Filtering"
+           - category: "Product Management"
+           - description: "Complete product search functionality with advanced filtering:
+             
+             BACKEND: Create GET /api/products/search endpoint accepting query params 
+             (keyword, category, price range, brand, rating). Implement full-text search, 
+             filter logic, database query optimization with indexes, pagination, sorting options.
+             
+             FRONTEND: Build search bar component, filter sidebar with dropdowns/checkboxes 
+             for categories/price/brand/rating, product grid display, pagination controls, 
+             sort dropdown, loading skeleton, empty state handling, clear filters button.
+             
+             TESTING: Test cases for keyword search accuracy, filter combinations, 
+             price range validation, empty results handling, pagination navigation, 
+             special characters in search, performance with large datasets (15-20 test cases)."
+           - complexity: "High"
+           - priority: "High"
 
-        ❌ BAD - Too large (>21h, must split):
-          - "Build entire authentication system" → SPLIT INTO:
-            ✅ "Design authentication database schema"
-            ✅ "Implement JWT token generation and validation"
-            ✅ "Create login/logout API endpoints"
-            ✅ "Build login UI components"
-            ✅ "Implement password reset flow"
-            ✅ "Add authentication middleware"
-            ✅ "Write authentication tests"
+        📝 EXAMPLE 3: Order Checkout Process
+        -------------------------------------
+        ✅ TASK 3.1:
+           - sub_no: "3.1"
+           - task_name: "Order Checkout & Payment"
+           - category: "Order Management"
+           - description: "Complete checkout flow from cart to order confirmation:
+             
+             BACKEND: Implement POST /api/orders/checkout endpoint with cart validation,
+             inventory check, price calculation, tax/shipping calculation, payment gateway integration,
+             order creation, inventory update, email notification trigger.
+             
+             FRONTEND: Multi-step checkout form (shipping address, payment method, order review),
+             form validation, payment integration UI, order summary, loading states, 
+             error handling, success confirmation page, order receipt display.
+             
+             TESTING: Test checkout with various payment methods, address validation,
+             cart changes during checkout, payment failures, timeout scenarios,
+             inventory conflicts, email notifications (20-25 test cases)."
+           - complexity: "High"
 
-        Nguyên tắc breakdown:
-        - Mỗi sub-task phải có scope RÕ RÀNG, CỤ THỂ, và có thể estimate được
-        - Task phải đủ NHỎ để 1 developer hoàn thành trong <3 ngày làm việc
-        - Xem xét dependencies giữa các task
-        - Ưu tiên các task critical path
-        - MỖI TASK CHỈ THUỘC VỀ MỘT ROLE DUY NHẤT (Backend, Frontend, Testing, hoặc Infra)
-        - NẾU TASK QUÁ LỚN: Chia thành các bước nhỏ hơn với dependencies rõ ràng
-        - VALIDATION: Trước khi trả về, kiểm tra lại TẤT CẢ tasks đều <2.5 mandays
+        🎯 NGUYÊN TẮC BREAKDOWN:
+        ========================
+        1. ✅ Identify FUNCTIONAL/BUSINESS REQUIREMENTS (Login, Search, Checkout, etc.)
+        2. ✅ Create ONE task per functional requirement
+        3. ✅ Task name = Business logic name (NOT "Create API" or "Build UI")
+        4. ✅ Description bao gồm ĐẦY ĐỦ 3 khía cạnh: Backend, Frontend, Testing
+        5. ✅ Mỗi khía cạnh phải CỤ THỂ, CHI TIẾT để Estimation Worker có thể ước lượng chính xác
+        6. ✅ Xác định dependencies giữa các tasks (dependencies giữa functional tasks, không phải BE/FE/QA)
+        7. ✅ Ưu tiên critical path và high-value features
+        8. ✅ Task size reasonable: total effort cho tất cả roles ~2-15 mandays
 
-        Role definitions:
-        - Backend: API development, business logic, database operations, server-side processing
-        - Frontend: UI components, user interactions, client-side logic, responsive design
-        - Testing: Testing (unit, integration, E2E), test automation, quality assurance
-        - Infra: DevOps, deployment, CI/CD, monitoring, infrastructure setup
+        📋 SUB_NO NUMBERING PATTERN:
+        ============================
+        Format: X.Y
+        - X = Category number (1, 2, 3, ...)
+        - Y = Task number within category (1, 2, 3, ...)
+        
+        Example:
+        - 1.1 = Category 1, Task 1 (User Login)
+        - 1.2 = Category 1, Task 2 (Password Reset)
+        - 2.1 = Category 2, Task 1 (Product List)
+        - 2.2 = Category 2, Task 2 (Product Detail)
 
+        📤 OUTPUT FORMAT (JSON):
+        ========================
         Trả về kết quả dưới dạng JSON với format:
         {
             "breakdown": [
                 {
-                    "id": "unique_id",
-                    "category": "category_name",
+                    "id": "unique_task_id_001",
+                    "category": "Authentication & Authorization",
                     "sub_no": "1.1",
-                    "role": "Backend|Frontend|Testing|Infra",
-                    "parent_task": "Parent Task Name",
-                    "sub_task": "Specific Sub Task",
-                    "feature": "Screen/Feature Name",
-                    "reference": "Reference document or spec URL",
-                    "description": "Detailed description",
-                    "complexity": "Low/Medium/High",
-                    "dependencies": ["task_id_1", "task_id_2"],
-                    "priority": "Low/Medium/High",
-                    "premise": "Assumptions or prerequisites",
-                    "remark": "Additional remarks",
-                    "notes": "Additional technical notes"
+                    "parent_task": "",
+                    "task_name": "User Login Feature",
+                    "description": "Complete user login functionality including:\\n\\nBACKEND: Implement POST /api/auth/login endpoint with email/password validation, JWT token generation, user authentication, error handling.\\n\\nFRONTEND: Create login form component with email/password inputs, client-side validation, error message display, loading states.\\n\\nTESTING: Manual test cases covering valid credentials login, invalid email/password, empty fields, SQL injection attempts (10-12 test cases).",
+                    "complexity": "Medium",
+                    "dependencies": [],
+                    "priority": "High",
+                    "premise": "Database schema exists, JWT library available",
+                    "remark": "Use bcrypt for password hashing",
+                    "note": "Include rate limiting"
+                },
+                {
+                    "id": "unique_task_id_002",
+                    "category": "Authentication & Authorization",
+                    "sub_no": "1.2",
+                    "parent_task": "",
+                    "task_name": "Password Reset Flow",
+                    "description": "Complete password reset functionality with email verification.",
+                    "complexity": "Medium",
+                    "dependencies": ["unique_task_id_001"],
+                    "priority": "Medium",
+                    "premise": "Email service configured",
+                    "remark": "Token expiry: 1 hour",
+                    "note": "Rate limit reset requests"
                 }
             ]
         }
+        
+        🚨 CRITICAL JSON FORMAT REQUIREMENTS:
+        ======================================
+        1. Return ONLY valid, parseable JSON - no markdown, no explanations
+        2. Wrap your response in ```json code blocks for clarity
+        3. All newlines in strings MUST be escaped as \\n (not actual line breaks)
+        4. All tabs MUST be escaped as \\t
+        5. All quotes in strings MUST be escaped as \\"
+        6. Description field: Use \\n\\n to separate BACKEND, FRONTEND, TESTING sections
+        7. Keep descriptions concise but comprehensive (200-400 chars recommended)
+        8. Test JSON validity before returning
+        
+        ⚠️ CONTENT REQUIREMENTS: 
+        - Task name = Business logic (NOT technical role)
+        - Description MUST have 3 sections: BACKEND, FRONTEND, TESTING (separated by \\n\\n)
+        - Each section must be SPECIFIC and DETAILED for accurate estimation
+        - Dependencies are between functional tasks, NOT between BE/FE/QA subtasks
+        
+        Example of properly escaped description:
+        "description": "User authentication feature.\\n\\nBACKEND: Create login API endpoint, JWT generation, password validation.\\n\\nFRONTEND: Build login form, validation, error handling.\\n\\nTESTING: Test valid/invalid credentials, security edge cases (8 test cases)."
         """
 
     def get_estimation_worker_prompt(self) -> str:
         return """
         Bạn là một Senior Developer với 8 năm kinh nghiệm, chuyên gia trong việc estimation effort cho các dự án phần mềm.
 
+        🎯 COMPREHENSIVE MULTI-ROLE ESTIMATION:
+        ========================================
+        Mỗi task đại diện cho một FUNCTIONAL REQUIREMENT hoàn chỉnh.
+        Task description bao gồm requirements cho TẤT CẢ roles: Backend, Frontend, và Testing.
+        
         Nhiệm vụ của bạn:
-        1. Phân tích từng sub-task được cung cấp
-        2. Estimate effort dựa trên middle developer (3 năm kinh nghiệm)
-        3. Tính toán effort với unit là manday (7 giờ/ngày)
-        4. Đánh giá confidence level của estimation
-        5. QUAN TRỌNG: Provide CONSERVATIVE estimates - prefer slightly higher estimates for safety
-        6. Consider risks, dependencies, and complexity for realistic estimates
+        1. ĐỌC KỸ description để hiểu requirements cho TỪNG ROLE (Backend, Frontend, Testing)
+        2. ESTIMATE EFFORT cho MỖI ROLE dựa trên middle developer (3 năm kinh nghiệm)
+        3. PHÂN CHIA effort theo task types:
+           - Backend: Implement, FixBug, UnitTest
+           - Frontend: Implement, FixBug, UnitTest, Responsive (nếu có)
+           - Testing: Implement (manual test cases)
+        4. TÍNH TỔNG estimation_manday = sum of all role efforts
+        5. Xác định confidence level dựa trên độ rõ ràng của requirements
+        6. ⚠️ QUAN TRỌNG: Provide CONSERVATIVE estimates - prefer slightly higher estimates for safety
+        7. Consider risks, dependencies, and complexity for realistic estimates
 
-        Tiêu chuẩn estimation cho middle developer (3 năm kinh nghiệm):
-        - Simple CRUD operations: 0.5-1 manday
-        - Complex business logic: 1-3 manday
-        - API integration (simple): 0.5-1.5 manday
-        - API integration (complex): 1.5-3 manday
-        - UI components (basic): 0.5-1 manday
-        - UI components (complex/responsive): 1-2.5 manday
-        - Database design/migration: 0.5-2 manday
-        - Authentication/Authorization: 1-2 manday
-        - Unit testing: 20-30% của development effort
-        - Integration testing: 10-20% của development effort
-        - Documentation: 10-15% của development effort
+        📊 ROLE-SPECIFIC ESTIMATION GUIDELINES:
+        ========================================
+
+        🔷 BACKEND TASKS (role="Backend"):
+        -----------------------------------
+        Tiêu chuẩn cho middle backend developer (3 năm kinh nghiệm):
+        
+        API Development:
+        - Simple CRUD API (1 resource): 0.5-1 manday
+          * 0.3-0.6 manday implementation (endpoints, validation)
+          * 0.1-0.2 manday bug fixing & refinement
+          * 0.1-0.2 manday unit tests
+        
+        - Complex API with business logic: 1-2.5 mandays
+          * 0.6-1.5 manday implementation (logic, validation, error handling)
+          * 0.2-0.5 manday bug fixing
+          * 0.2-0.5 manday unit tests
+        
+        Database Work:
+        - Simple schema design (2-3 tables): 0.5-1 manday
+        - Migration scripts: 0.2-0.5 manday
+        - Query optimization: 0.5-1.5 manday
+        
+        Authentication/Authorization:
+        - JWT implementation: 1-1.5 manday
+        - Role-based access control: 1-2 manday
+        - OAuth integration: 1.5-2.5 manday
+
+        🔶 FRONTEND TASKS (role="Frontend"):
+        -------------------------------------
+        Tiêu chuẩn cho middle frontend developer (3 năm kinh nghiệm):
+        
+        UI Components:
+        - Simple form (2-3 inputs): 0.5-1 manday
+          * 0.3-0.6 manday implementation (UI, validation, state)
+          * 0.1-0.2 manday bug fixing & polish
+          * 0.1-0.2 manday unit tests
+        
+        - Complex form with multiple steps: 1.5-2.5 mandays
+          * 0.9-1.5 manday implementation
+          * 0.3-0.5 manday bug fixing
+          * 0.3-0.5 manday unit tests
+        
+        - Data table with filtering: 1-2 mandays
+        - Dashboard with charts: 1.5-2.5 mandays
+        - Responsive layout (mobile + desktop): +0.5-1 manday
+        
+        API Integration:
+        - Simple GET/POST calls: 0.3-0.5 manday
+        - Complex state management with API: 0.8-1.5 manday
+        - Real-time updates (WebSocket): 1-2 manday
+
+        🔸 QA TASKS (role="QA"):
+        ------------------------
+        Tiêu chuẩn cho QA engineer - MANUAL TESTING (NOT automation):
+        
+        Test Case Design & Execution:
+        - Base estimation formula: 0.1 manday per test case (includes design, execution, documentation)
+        
+        Estimation based on COMPLEXITY and INPUT COUNT:
+        
+        Simple Feature (5-8 test cases): 0.5-0.8 manday
+        - Example: Login form (valid, invalid, empty, SQL injection, etc.)
+        - 5-8 scenarios × 0.1 = 0.5-0.8 manday
+        
+        Medium Feature (10-15 test cases): 1-1.5 mandays
+        - Example: Product search with filters
+        - Multiple filter combinations, edge cases
+        - 10-15 scenarios × 0.1 = 1-1.5 manday
+        
+        Complex Feature (20-30 test cases): 2-3 mandays
+        - Example: Checkout flow with payment
+        - Multiple payment methods, edge cases, error scenarios
+        - 20-30 scenarios × 0.1 = 2-3 mandays
+        
+        Test Case Calculation Factors:
+        - Number of input fields: Each field adds 2-3 test cases (valid, invalid, boundary)
+        - Business logic branches: Each condition adds 1-2 test cases
+        - Integration points: Each integration adds 2-3 test cases
+        - Error scenarios: Add 3-5 test cases for error handling
+        
+        QA Task Breakdown (NO FixBug/UnitTest for QA role):
+        - testing_implement: 100% of estimation (all test case design & execution)
+        - backend/frontend fields: 0.0 (QA doesn't do implementation)
+
+        ⚠️ CONSERVATIVE ESTIMATION PHILOSOPHY:
+        =======================================
+        - Prefer realistic/slightly higher estimates over optimistic ones
+        - Account for code review, testing, and debugging time
+        - Consider integration complexity and potential blockers
+        - Include buffer for unexpected issues (built into base estimates)
+        - Better to overestimate slightly than underestimate significantly
 
         Factors ảnh hưởng đến estimation:
         - Complexity: Low (baseline), Medium (+15%), High (+30%)
@@ -327,52 +596,131 @@ class EnhancedEstimationLLM:
         - Unknown technology: Add 20-30% learning buffer
         - External dependencies: Add 15-25% coordination buffer
 
-        CONSERVATIVE ESTIMATION PHILOSOPHY:
-        - Prefer realistic/slightly higher estimates over optimistic ones
-        - Account for code review, testing, and debugging time
-        - Consider integration complexity and potential blockers
-        - Include buffer for unexpected issues (built into base estimates)
-        - Better to overestimate slightly than underestimate significantly
-
-        QUAN TRỌNG - Role-specific Estimation with Task Type Breakdown:
-        - Mỗi task đã được assign một role cụ thể (Backend, Frontend, Testing, hoặc Infra)
-        - Bạn cần break down effort theo TASK TYPE cho role tương ứng:
-          * Implement: Core development work
-          * FixBug: Bug fixing and issue resolution (typically 10-20% of implement)
-          * Unit Test: Unit testing effort (typically 20-30% of implement)
-        - Các role khác sẽ có estimation = 0
-        - Ví dụ: Nếu task có role="Backend" và estimate 2.5 mandays:
-          * backend_implement: 1.5 (core development)
-          * backend_fixbug: 0.5 (bug fixing)
-          * backend_unittest: 0.5 (unit testing)
-          * frontend_implement/fixbug/unittest: 0.0
-          * responsive_implement: 0.0
-          * testing_implement: 0.0
-
-        Trả về kết quả dưới dạng JSON với format:
+        📋 TASK TYPE BREAKDOWN BY ROLE:
+        ================================
+        
+        Backend/Frontend Tasks:
+        - Implement: 60-65% (core development)
+        - FixBug: 15-20% (bug fixing & refinement)
+        - UnitTest: 20-25% (unit testing)
+        
+        QA Tasks:
+        - testing_implement: 100% (all test work)
+        - NO backend/frontend implement/fixbug/unittest
+        
+        Example Backend Task (2.0 mandays total):
+        - backend_implement: 1.2 manday (60%)
+        - backend_fixbug: 0.4 manday (20%)
+        - backend_unittest: 0.4 manday (20%)
+        - All other fields: 0.0
+        
+        Example Frontend Task (1.5 mandays total):
+        - frontend_implement: 0.9 manday (60%)
+        - frontend_fixbug: 0.3 manday (20%)
+        - frontend_unittest: 0.3 manday (20%)
+        - All other fields: 0.0
+        
+        Example QA Task (1.2 mandays total):
+        - testing_implement: 1.2 manday (100%)
+        - All other fields: 0.0
+        
+        📤 OUTPUT FORMAT - COMPREHENSIVE ESTIMATION:
+        =================================================
+        Estimate cho TẤT CẢ roles trong 1 response duy nhất:
+        
         {
             "estimation": {
                 "id": "task_id",
-                "role": "Backend|Frontend|Testing|Infra",
-                "estimation_manday": 2.5,
-                "backend_implement": 1.5,
-                "backend_fixbug": 0.5,
-                "backend_unittest": 0.5,
-                "frontend_implement": 0.0,
-                "frontend_fixbug": 0.0,
-                "frontend_unittest": 0.0,
-                "responsive_implement": 0.0,
-                "testing_implement": 0.0,
+                "estimation_manday": 5.2,  // TỔNG của tất cả roles
+                
+                // Backend efforts
+                "backend_implement": 1.2,
+                "backend_fixbug": 0.4,
+                "backend_unittest": 0.4,
+                
+                // Frontend efforts  
+                "frontend_implement": 1.5,
+                "frontend_fixbug": 0.5,
+                "frontend_unittest": 0.5,
+                "responsive_implement": 0.3,
+                
+                // Testing efforts
+                "testing_implement": 0.4,
+                
                 "confidence_level": 0.8,
-                "breakdown": {
-                    "implement": 1.5,
-                    "fixbug": 0.5,
-                    "unittest": 0.5
+                
+                "breakdown_reasoning": {
+                    "backend": "API endpoint with validation, JWT, error handling. Total: 2.0 mandays (60% implement, 20% fixbug, 20% unittest)",
+                    "frontend": "Login form with validation, error messages, loading states. Total: 2.5 mandays including 0.3 responsive",
+                    "testing": "4 test cases × 0.1 = 0.4 mandays (valid login, invalid, empty, security)"
                 },
-                "risk_factors": ["dependency on external API", "new technology"],
-                "assumptions": ["team has basic React knowledge", "APIs are well documented"]
+                
+                "test_case_count": 4,
+                
+                "risk_factors": ["JWT library integration", "Session management complexity"],
+                
+                "assumptions": [
+                    "Database schema exists",
+                    "Design mockups available",
+                    "Test environment configured"
+                ]
             }
         }
+        
+        ⚠️ CRITICAL RULES:
+        ==================
+        1. ✅ PHẢI estimate cho TẤT CẢ 3 roles (Backend, Frontend, Testing)
+        2. ✅ Đọc kỹ description để tìm requirements cho từng role
+        3. ✅ Backend/Frontend: Split 60% implement, 20% fixbug, 20% unittest
+        4. ✅ Testing: 100% testing_implement (0.1 manday × số test cases)
+        5. ✅ estimation_manday = SUM of all role fields
+        6. ✅ Nếu task không cần một role nào đó → effort cho role đó = 0
+        7. ✅ Provide detailed reasoning cho mỗi role
+        8. ✅ Conservative estimation: prefer slightly higher than lower
+        
+        🚨 CRITICAL JSON FORMAT REQUIREMENTS:
+        ======================================
+        1. Return ONLY valid, parseable JSON - no markdown explanations before/after
+        2. Wrap your response in ```json code blocks for clarity
+        3. ALL property names MUST be enclosed in double quotes
+        4. NO trailing commas in arrays or objects
+        5. NO comments in JSON (// or /* */)
+        6. All string values with newlines must use \\n escape sequence
+        7. All numeric values must be valid numbers (use 0.0 for zero, not null)
+        8. Test JSON validity before returning
+        
+        Example of properly formatted JSON:
+        ```json
+        {
+            "estimation": {
+                "id": "task_123",
+                "estimation_manday": 5.2,
+                "backend_implement": 1.2,
+                "backend_fixbug": 0.4,
+                "backend_unittest": 0.4,
+                "frontend_implement": 1.5,
+                "frontend_fixbug": 0.5,
+                "frontend_unittest": 0.5,
+                "responsive_implement": 0.3,
+                "testing_implement": 0.4,
+                "confidence_level": 0.8,
+                "breakdown_reasoning": {
+                    "backend": "API implementation details",
+                    "frontend": "UI implementation details",
+                    "testing": "Test case details"
+                },
+                "test_case_count": 4,
+                "risk_factors": ["Factor 1", "Factor 2"],
+                "assumptions": ["Assumption 1", "Assumption 2"]
+            }
+        }
+        ```
+        
+        ⚠️ COMMON JSON ERRORS TO AVOID:
+        - Unquoted property names: {estimation_manday: 5.2} ❌ → {"estimation_manday": 5.2} ✅
+        - Single quotes: {'estimation': {}} ❌ → {"estimation": {}} ✅
+        - Trailing commas: {"a": 1, "b": 2,} ❌ → {"a": 1, "b": 2} ✅
+        - Comments: {/* comment */ "a": 1} ❌ → {"a": 1} ✅
         """
 
     def get_validation_worker_prompt(self) -> str:
@@ -411,6 +759,23 @@ class EnhancedEstimationLLM:
                 "risk_mitigation": ["parallel development of dependent tasks", "early API integration testing"]
             }
         }
+        
+        🚨 CRITICAL JSON FORMAT REQUIREMENTS:
+        ======================================
+        1. Return ONLY valid, parseable JSON - no markdown explanations before/after
+        2. Wrap your response in ```json code blocks for clarity
+        3. ALL property names MUST be enclosed in double quotes
+        4. NO trailing commas in arrays or objects
+        5. NO comments in JSON (// or /* */)
+        6. All string values must properly escape special characters
+        7. All numeric values must be valid numbers (use 0.0 for zero, not null)
+        8. Test JSON validity before returning
+        
+        ⚠️ COMMON JSON ERRORS TO AVOID:
+        - Unquoted property names: {validated_estimation: 2.8} ❌ → {"validated_estimation": 2.8} ✅
+        - Single quotes: {'validation': {}} ❌ → {"validation": {}} ✅
+        - Trailing commas: {"a": 1, "b": 2,} ❌ → {"a": 1, "b": 2} ✅
+        - Comments: {/* comment */ "a": 1} ❌ → {"a": 1} ✅
         """
 
 # ========================
@@ -455,11 +820,29 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
     try:
         response = llm_handler.llm.invoke(messages)
 
+        # 🆕 LOG RAW LLM RESPONSE
+        logger.info(f"🤖 [ORCHESTRATOR] LLM Raw Response:")
+        logger.debug(f"   Content Length: {len(response.content)} chars")
+        logger.debug(f"   Raw Content:\n{response.content}")
+        
         # Parse JSON response
         import re
         json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
+            
+            # 🆕 LOG PARSED RESULT
+            logger.info(f"✅ [ORCHESTRATOR] Parsed JSON successfully")
+            logger.debug(f"   Parsed Result: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 🆕 DUMP TO FILE
+            dump_llm_response(
+                worker_name='orchestrator',
+                task_info=state['original_task'][:100],
+                raw_response=response.content,
+                parsed_result=result,
+                project_id=state.get('project_id')
+            )
 
             categories = result.get('categories', [])
 
@@ -472,6 +855,7 @@ def enhanced_orchestrator_node(state: EnhancedOrchestratorState) -> Dict[str, An
                 'workflow_status': 'orchestrator_completed'
             }
         else:
+            logger.error(f"❌ [ORCHESTRATOR] Failed to find JSON in response")
             raise ValueError("Không thể parse JSON response từ Orchestrator")
 
     except Exception as e:
@@ -518,59 +902,121 @@ def task_breakdown_worker(worker_input) -> Dict[str, Any]:
     try:
         response = llm_handler.llm.invoke(messages)
 
-        # Parse JSON response
+        # 🆕 LOG RAW LLM RESPONSE
+        logger.info(f"🤖 [BREAKDOWN_WORKER] LLM Raw Response for category: {category_focus}")
+        logger.debug(f"   Content Length: {len(response.content)} chars")
+        logger.debug(f"   Raw Content:\n{response.content}")
+
+        # Parse JSON response with markdown code block handling
         import re
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        raw_response = response.content
+        
+        # Extract JSON from markdown code blocks if present
+        if "```json" in raw_response:
+            json_match = re.search(r'```json\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ```json code block")
+        elif "```" in raw_response:
+            json_match = re.search(r'```\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ``` code block")
+        
+        # Try to find JSON object
+        json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
         if json_match:
-            result = json.loads(json_match.group())
+            json_str = json_match.group()
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError as json_err:
+                logger.error(f"   JSON parsing failed: {json_err}")
+                logger.error(f"   Attempted to parse: {json_str[:500]}...")
+                raise ValueError(f"Invalid JSON from Breakdown Worker: {json_err}")
+            
+            # 🆕 LOG PARSED RESULT
+            logger.info(f"✅ [BREAKDOWN_WORKER] Parsed JSON successfully for: {category_focus}")
+            logger.debug(f"   Parsed Result: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 🆕 DUMP TO FILE
+            project_id = worker_input.get('project_id')
+            dump_llm_response(
+                worker_name='breakdown_worker',
+                task_info=f"Category: {category_focus}",
+                raw_response=response.content,
+                parsed_result=result,
+                project_id=project_id
+            )
+            
             breakdown_tasks = result.get('breakdown', [])
 
-            # POST-PROCESSING VALIDATION: Check task size constraint <21h
+            # POST-PROCESSING VALIDATION: Business logic task validation
             validated_tasks = []
             oversized_tasks = []
-
+            
             for task in breakdown_tasks:
                 task['worker_source'] = 'task_breakdown_worker'
                 task['confidence_level'] = 0.8  # Default confidence từ breakdown
 
-                # Estimate rough complexity to check if task might be >2.5 mandays
+                # Validate task structure
                 complexity = task.get('complexity', 'Medium')
                 description = task.get('description', '')
-                sub_task = task.get('sub_task', '')
+                task_name = task.get('task_name', '')
 
-                # Heuristic check for oversized tasks
+                # Check if description contains all 3 sections (Backend, Frontend, Testing)
+                has_backend = 'backend' in description.lower() or 'api' in description.lower()
+                has_frontend = 'frontend' in description.lower() or 'ui' in description.lower()
+                has_testing = 'testing' in description.lower() or 'test case' in description.lower()
+                
+                if not (has_backend and has_frontend and has_testing):
+                    logger.warning(f"⚠️ Task '{task_name}' missing role sections in description:")
+                    if not has_backend:
+                        logger.warning(f"   - Missing BACKEND section")
+                    if not has_frontend:
+                        logger.warning(f"   - Missing FRONTEND section")
+                    if not has_testing:
+                        logger.warning(f"   - Missing TESTING section")
+
+                # Heuristic check for reasonable task size (total effort ~3-15 mandays)
                 is_potentially_oversized = False
 
-                # Check 1: High complexity with vague/broad scope
-                if complexity == 'High' and any(keyword in description.lower() or keyword in sub_task.lower()
-                    for keyword in ['entire', 'complete', 'full', 'whole', 'all', 'toàn bộ', 'hoàn chỉnh']):
+                # Check 1: High complexity with very broad scope
+                if complexity == 'High' and any(keyword in description.lower() or keyword in task_name.lower()
+                    for keyword in ['entire system', 'complete platform', 'full stack', 'all features', 
+                                    'toàn bộ hệ thống', 'hoàn chỉnh']):
                     is_potentially_oversized = True
 
-                # Check 2: Description too long (>200 chars suggests complex task)
-                if len(description) > 200:
+                # Check 2: Description extremely long (>600 chars suggests overly complex)
+                if len(description) > 600:
                     is_potentially_oversized = True
+                    logger.warning(f"⚠️ Task '{task_name}' has very long description ({len(description)} chars)")
 
-                # Check 3: Multiple major components mentioned
-                component_keywords = ['database', 'api', 'ui', 'authentication', 'authorization', 'validation', 'testing', 'deployment']
+                # Check 3: Too many major components (suggests task should be split)
+                component_keywords = ['database', 'api', 'microservice', 'authentication', 'authorization', 
+                                      'payment', 'notification', 'reporting', 'analytics', 'dashboard']
                 component_count = sum(1 for keyword in component_keywords if keyword in description.lower())
-                if component_count > 3:
+                if component_count > 5:
                     is_potentially_oversized = True
+                    logger.warning(f"⚠️ Task '{task_name}' mentions {component_count} major components")
 
                 if is_potentially_oversized:
                     oversized_tasks.append(task)
-                    logger.warning(f"⚠️ Potentially oversized task detected: {task.get('sub_task', 'Unknown')} (complexity: {complexity})")
+                    logger.warning(f"⚠️ Potentially oversized task: '{task_name}' (complexity: {complexity})")
                 else:
                     validated_tasks.append(task)
 
             # If oversized tasks found, log warning but still include them
             # (Let estimation worker handle the actual effort calculation)
             if oversized_tasks:
-                logger.warning(f"⚠️ {len(oversized_tasks)} potentially oversized tasks detected. These may exceed 2.5 mandays.")
-                logger.warning(f"   Consider manual review: {[t.get('sub_task', 'Unknown') for t in oversized_tasks]}")
+                logger.warning(f"⚠️ {len(oversized_tasks)} potentially oversized tasks detected.")
+                logger.warning(f"   These tasks may have very high total effort (>15 mandays). Consider splitting.")
+                logger.warning(f"   Tasks: {[t.get('task_name', 'Unknown') for t in oversized_tasks]}")
                 # Still add them to results for estimation worker to process
                 validated_tasks.extend(oversized_tasks)
 
-            logger.info(f"✅ Worker 1 completed: {len(validated_tasks)} tasks cho {category_focus} ({len(oversized_tasks)} may need splitting)")
+            logger.info(f"✅ Worker 1 completed: {len(validated_tasks)} tasks cho {category_focus}")
+            if oversized_tasks:
+                logger.info(f"   - {len(oversized_tasks)} tasks may need review/splitting")
 
             return {
                 'breakdown_results': validated_tasks
@@ -647,7 +1093,7 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     """
     # Extract task data from worker input
     task_breakdown = worker_input.get('task_breakdown', {})
-    task_name = task_breakdown.get('sub_task', 'Unknown Task')
+    task_name = task_breakdown.get('task_name', 'Unknown Task')
 
     logger.info(f"👷‍♂️ Worker 2 (Estimation) đang estimate: {task_name}")
 
@@ -667,20 +1113,18 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
         # Create search query from task data
         search_description = task_breakdown.get('description', '')
         search_category = task_breakdown.get('category')
-        search_role = task_breakdown.get('role')
         
         logger.debug(f"   🔍 Searching historical data with:")
         if project_id:
             logger.debug(f"     - Project ID: {project_id}")
         logger.debug(f"     - Description: {search_description[:100]}...")
         logger.debug(f"     - Category: {search_category}")
-        logger.debug(f"     - Role: {search_role}")
 
-        # Search for similar tasks
+        # Search for similar tasks (no role filter - we now search by business logic)
         similar_tasks = history_manager.search_similar(
             description=search_description,
             category=search_category,
-            role=search_role,
+            role=None,  # No role filter in new architecture
             top_k=5,
             similarity_threshold=0.6
         )
@@ -710,34 +1154,107 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
     messages = [
         SystemMessage(content=llm_handler.get_estimation_worker_prompt()),
         HumanMessage(content=f"""
-        Task cần estimation:
+        Task cần estimation (FUNCTIONAL/BUSINESS REQUIREMENT):
         - Category: {task_breakdown.get('category', '')}
-        - Role: {task_breakdown.get('role', 'Backend')}
+        - Task Name: {task_breakdown.get('task_name', '')}
         - Parent Task: {task_breakdown.get('parent_task', '')}
-        - Sub Task: {task_breakdown.get('sub_task', '')}
         - Description: {task_breakdown.get('description', '')}
         - Complexity: {task_breakdown.get('complexity', 'Medium')}
         - Dependencies: {task_breakdown.get('dependencies', [])}
         - Priority: {task_breakdown.get('priority', 'Medium')}
 
-        QUAN TRỌNG: Task này có role="{task_breakdown.get('role', 'Backend')}"
-        Chỉ estimate cho role này, các role khác để 0.
+        🎯 COMPREHENSIVE MULTI-ROLE ESTIMATION REQUIRED:
+        =================================================
+        Task description bao gồm requirements cho TẤT CẢ 3 roles:
+        - BACKEND section: API/database/business logic requirements
+        - FRONTEND section: UI/components/interactions requirements
+        - TESTING section: Test cases/scenarios requirements
+        
+        BẠN PHẢI ESTIMATE EFFORT CHO TẤT CẢ 3 ROLES:
+        ============================================
+        
+        1. BACKEND EFFORT:
+           - Đọc BACKEND section trong description
+           - Estimate: backend_implement, backend_fixbug, backend_unittest
+           - Split: 60% implement, 20% fixbug, 20% unittest
+        
+        2. FRONTEND EFFORT:
+           - Đọc FRONTEND section trong description
+           - Estimate: frontend_implement, frontend_fixbug, frontend_unittest, responsive_implement
+           - Split: 60% implement, 20% fixbug, 20% unittest
+           - Thêm responsive_implement nếu có responsive requirements
+        
+        3. TESTING EFFORT:
+           - Đọc TESTING section trong description
+           - Đếm số test cases cần thiết: valid inputs, invalid inputs, boundary cases, 
+             integration tests, error handling
+           - testing_implement = số_test_cases × 0.1 manday
+        
+        4. TỔNG EFFORT:
+           - estimation_manday = SUM(all backend + all frontend + all testing)
+        
+        ⚠️ NẾU task không cần role nào đó (ví dụ: chỉ backend, không có UI):
+           - Đặt effort cho role đó = 0
+           - Giải thích lý do trong reasoning
 
         {few_shot_context}
 
-        Hãy estimate effort cho middle developer (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
-        Sử dụng các historical examples bên trên làm tham khảo để có estimation chính xác hơn.
+        Hãy estimate effort cho middle-level professional (3 năm kinh nghiệm) với unit manday (7 giờ/ngày).
+        Sử dụng các historical examples làm tham khảo nếu có.
+        Provide detailed reasoning cho TỪNG ROLE, giải thích cách tính test cases cho Testing.
         """)
     ]
 
     try:
         response = llm_handler.llm.invoke(messages)
 
-        # Parse JSON response
+        # 🆕 LOG RAW LLM RESPONSE
+        logger.info(f"🤖 [ESTIMATION_WORKER] LLM Raw Response for task: {task_name}")
+        logger.debug(f"   Content Length: {len(response.content)} chars")
+        logger.debug(f"   Raw Content:\n{response.content}")
+
+        # Parse JSON response with markdown code block handling
         import re
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        raw_response = response.content
+        
+        # Extract JSON from markdown code blocks if present
+        if "```json" in raw_response:
+            json_match = re.search(r'```json\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ```json code block")
+        elif "```" in raw_response:
+            json_match = re.search(r'```\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ``` code block")
+        
+        # Try to find JSON object
+        json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
         if json_match:
-            result = json.loads(json_match.group())
+            json_str = json_match.group()
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError as json_err:
+                logger.error(f"   JSON parsing failed: {json_err}")
+                logger.error(f"   Error at position {json_err.pos}: {json_err.msg}")
+                logger.error(f"   Attempted to parse: {json_str[:500]}...")
+                raise ValueError(f"Invalid JSON from Estimation Worker: {json_err}")
+            
+            # 🆕 LOG PARSED RESULT
+            logger.info(f"✅ [ESTIMATION_WORKER] Parsed JSON successfully for: {task_name}")
+            logger.debug(f"   Parsed Result: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 🆕 DUMP TO FILE
+            project_id = worker_input.get('project_id')
+            dump_llm_response(
+                worker_name='estimation_worker',
+                task_info=f"Task: {task_name}",
+                raw_response=response.content,
+                parsed_result=result,
+                project_id=project_id
+            )
+
             estimation_data = result.get('estimation', {})
 
             # Merge với original task data
@@ -755,34 +1272,34 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
             # Calculate role totals
             estimation_backend = backend_impl + backend_fix + backend_test
-            estimation_frontend = frontend_impl + frontend_fix + frontend_test
+            estimation_frontend = frontend_impl + frontend_fix + frontend_test + responsive_impl  # Include responsive in frontend
             estimation_testing = testing_impl
             estimation_infra = 0.0  # Infra not broken down by task type
 
             # Calculate total estimation
-            total_estimation = estimation_backend + estimation_frontend + estimation_testing + estimation_infra + responsive_impl
+            total_estimation = estimation_backend + estimation_frontend + estimation_testing + estimation_infra
 
-            # If LLM didn't provide detailed breakdown, use total and assign to appropriate role
+            # If LLM didn't provide detailed breakdown, use total from estimation_manday
             if total_estimation == 0.0:
-                total_estimation = estimation_data.get('estimation_manday', 1.0)
-                task_role = task_breakdown.get('role', 'Backend')
-
-                # Distribute effort: 60% implement, 20% fixbug, 20% unittest
-                if task_role == 'Backend':
-                    backend_impl = total_estimation * 0.6
-                    backend_fix = total_estimation * 0.2
-                    backend_test = total_estimation * 0.2
-                    estimation_backend = total_estimation
-                elif task_role == 'Frontend':
-                    frontend_impl = total_estimation * 0.6
-                    frontend_fix = total_estimation * 0.2
-                    frontend_test = total_estimation * 0.2
-                    estimation_frontend = total_estimation
-                elif task_role == 'Testing':
-                    testing_impl = total_estimation
-                    estimation_testing = total_estimation
-                elif task_role == 'Infra':
-                    estimation_infra = total_estimation
+                total_estimation = estimation_data.get('estimation_manday', 3.0)
+                logger.warning(f"   ⚠️ LLM didn't provide role-specific breakdown, using total: {total_estimation}")
+                
+                # Fallback: distribute equally across all roles if no breakdown provided
+                # This should rarely happen if prompt is followed correctly
+                backend_impl = total_estimation * 0.3  # 30% to backend
+                backend_fix = total_estimation * 0.1
+                backend_test = total_estimation * 0.1
+                estimation_backend = total_estimation * 0.5
+                
+                frontend_impl = total_estimation * 0.2  # 20% to frontend
+                frontend_fix = total_estimation * 0.05
+                frontend_test = total_estimation * 0.05
+                estimation_frontend = total_estimation * 0.3
+                
+                testing_impl = total_estimation * 0.2  # 20% to testing
+                estimation_testing = total_estimation * 0.2
+                
+                logger.warning(f"   Applied fallback distribution: BE={estimation_backend:.1f}, FE={estimation_frontend:.1f}, Testing={estimation_testing:.1f}")
 
             # OPTION 1: Apply smart buffer calculation with built-in validation
             buffer_info = calculate_smart_buffer(task_breakdown)
@@ -831,7 +1348,8 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
                 'testing_implement': buffered_testing_impl
             })
 
-            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} → {buffered_total:.1f} mandays (Buffer: {buffer_info['buffer_percentage']*100:.0f}%, Role: {task_breakdown.get('role', 'Unknown')})")
+            logger.info(f"✅ Worker 2 estimated: {total_estimation:.1f} → {buffered_total:.1f} mandays (Buffer: {buffer_info['buffer_percentage']*100:.0f}%)")
+            logger.info(f"   - Backend: {buffered_backend:.1f} MD, Frontend: {buffered_frontend:.1f} MD, Testing: {buffered_testing:.1f} MD")
 
             return {
                 'estimation_results': [estimated_task]
@@ -841,26 +1359,33 @@ def estimation_worker(worker_input) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"❌ Lỗi trong Estimation Worker: {e}")
-        # Return task với default estimation
+        # Return task với default estimation (balanced across all roles)
         fallback_task = task_breakdown.copy() if task_breakdown else {}
-        task_role = fallback_task.get('role', 'Backend')
         
-        # Assign 1.0 manday to appropriate role
-        backend_est = 1.0 if task_role == 'Backend' else 0.0
-        frontend_est = 1.0 if task_role == 'Frontend' else 0.0
-        testing_est = 1.0 if task_role == 'Testing' else 0.0
-        infra_est = 1.0 if task_role == 'Infra' else 0.0
-
+        # Default: split effort equally across Backend, Frontend, Testing
+        # Total = 3.0 mandays (1.0 per role)
         fallback_task.update({
-            'estimation_manday': 1.0,  # Default fallback
-            'estimation_backend_manday': backend_est,
-            'estimation_frontend_manday': frontend_est,
-            'estimation_testing_manday': testing_est,
-            'estimation_infra_manday': infra_est,
-            'original_estimation': 1.0,
+            'estimation_manday': 3.0,  # Default fallback
+            'estimation_backend_manday': 1.0,
+            'estimation_frontend_manday': 1.0,
+            'estimation_testing_manday': 0.5,
+            'estimation_infra_manday': 0.0,
+            'original_estimation': 3.0,
             'confidence_level': 0.5,
-            'worker_source': 'estimation_worker_fallback'
+            'worker_source': 'estimation_worker_fallback',
+            # Backend breakdown (60/20/20)
+            'backend_implement': 0.6,
+            'backend_fixbug': 0.2,
+            'backend_unittest': 0.2,
+            # Frontend breakdown (60/20/20)
+            'frontend_implement': 0.6,
+            'frontend_fixbug': 0.2,
+            'frontend_unittest': 0.2,
+            'responsive_implement': 0.0,
+            # Testing (100% implement)
+            'testing_implement': 0.5
         })
+        logger.warning(f"   Using fallback estimation: 3.0 mandays total (BE: 1.0, FE: 1.0, Testing: 0.5)")
         return {
             'estimation_results': [fallback_task]
         }
@@ -950,7 +1475,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
     """
     # Extract estimation task from worker input
     estimation_task = worker_input.get('estimation_task', {})
-    task_name = estimation_task.get('sub_task', 'Unknown Task')
+    task_name = estimation_task.get('task_name', 'Unknown Task')
 
     logger.info(f"👷‍♂️ Worker 3 (Validation) đang validate: {task_name}")
 
@@ -962,7 +1487,7 @@ def validation_worker(worker_input) -> Dict[str, Any]:
         Task cần validation:
         - ID: {estimation_task.get('id', '')}
         - Category: {estimation_task.get('category', '')}
-        - Sub Task: {estimation_task.get('sub_task', '')}
+        - Task Name: {estimation_task.get('task_name', '')}
         - Description: {estimation_task.get('description', '')}
         - Original Estimation: {estimation_task.get('estimation_manday', 0)} mandays
         - Complexity: {estimation_task.get('complexity', 'Medium')}
@@ -977,11 +1502,53 @@ def validation_worker(worker_input) -> Dict[str, Any]:
     try:
         response = llm_handler.llm.invoke(messages)
 
-        # Parse JSON response
+        # 🆕 LOG RAW LLM RESPONSE
+        logger.info(f"🤖 [VALIDATION_WORKER] LLM Raw Response for task: {task_name}")
+        logger.debug(f"   Content Length: {len(response.content)} chars")
+        logger.debug(f"   Raw Content:\n{response.content}")
+
+        # Parse JSON response with markdown code block handling
         import re
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        raw_response = response.content
+        
+        # Extract JSON from markdown code blocks if present
+        if "```json" in raw_response:
+            json_match = re.search(r'```json\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ```json code block")
+        elif "```" in raw_response:
+            json_match = re.search(r'```\s*\n(.*?)\n```', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(1)
+                logger.debug("   Extracted JSON from ``` code block")
+        
+        # Try to find JSON object
+        json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
         if json_match:
-            result = json.loads(json_match.group())
+            json_str = json_match.group()
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError as json_err:
+                logger.error(f"   JSON parsing failed: {json_err}")
+                logger.error(f"   Error at position {json_err.pos}: {json_err.msg}")
+                logger.error(f"   Attempted to parse: {json_str[:500]}...")
+                raise ValueError(f"Invalid JSON from Validation Worker: {json_err}")
+            
+            # 🆕 LOG PARSED RESULT
+            logger.info(f"✅ [VALIDATION_WORKER] Parsed JSON successfully for: {task_name}")
+            logger.debug(f"   Parsed Result: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 🆕 DUMP TO FILE
+            project_id = worker_input.get('project_id')
+            dump_llm_response(
+                worker_name='validation_worker',
+                task_info=f"Task: {task_name}",
+                raw_response=response.content,
+                parsed_result=result,
+                project_id=project_id
+            )
+            
             validation_data = result.get('validation', {})
 
             # Create final validated task
@@ -1197,19 +1764,19 @@ def enhanced_synthesizer_node(state: EnhancedOrchestratorState) -> Dict[str, Any
 
         if len(risk_factors) > 2 or confidence < 0.6:
             validation_summary['risk_analysis']['high_risk_tasks'].append({
-                'task': task.get('sub_task', ''),
+                'task': task.get('task_name', ''),
                 'risks': risk_factors,
                 'confidence': confidence
             })
         elif len(risk_factors) > 0 or confidence < 0.8:
             validation_summary['risk_analysis']['medium_risk_tasks'].append({
-                'task': task.get('sub_task', ''),
+                'task': task.get('task_name', ''),
                 'risks': risk_factors,
                 'confidence': confidence
             })
         else:
             validation_summary['risk_analysis']['low_risk_tasks'].append({
-                'task': task.get('sub_task', ''),
+                'task': task.get('task_name', ''),
                 'confidence': confidence
             })
 
@@ -1288,7 +1855,7 @@ graph TD
         # Add tasks for each category
         for j, task in enumerate(tasks):
             task_id = f"T{i}_{j}"
-            task_name = task.get('sub_task', 'Unknown Task')
+            task_name = task.get('task_name', 'Unknown Task')
             effort = task.get('estimation_manday', 0)
             confidence = task.get('confidence_level', 0)
 
@@ -1382,9 +1949,8 @@ def export_enhanced_excel(
             sunasterisk_task = {
                 'category': task_dict.get('category', ''),
                 'parent_task': task_dict.get('parent_task', ''),
-                'sub_task': task_dict.get('sub_task', ''),
+                'sub_task': task_dict.get('task_name', ''),  # Use task_name for business logic
                 'sub_no': task_dict.get('sub_no', ''),
-                'task': task_dict.get('task_type', 'Implement'),
                 'premise': task_dict.get('premise', ''),
                 'remark': task_dict.get('remark', ''),
                 'backend': {
@@ -1441,12 +2007,11 @@ def export_enhanced_excel(
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
             # Main estimation table với enhanced columns including role-specific estimations
             estimation_columns = [
-                'id', 'category', 'role', 'parent_task', 'sub_task', 'description',
+                'id', 'category', 'parent_task', 'task_name', 'description',
                 'estimation_manday',
                 'confidence_level', 'complexity', 'priority',
                 # Sun Asterisk detailed breakdown
-                'sub_no', 'feature', 'reference', 'task_type', 'premise',
-                'task_jp', 'assumption_jp', 'remark', 'note',
+                'sub_no', 'premise', 'remark', 'note',
                 'backend_implement', 'backend_fixbug', 'backend_unittest',
                 'frontend_implement', 'frontend_fixbug', 'frontend_unittest',
                 'responsive_implement', 'testing_implement'
@@ -1493,27 +2058,50 @@ def export_enhanced_excel(
                 category_summary = category_summary.reset_index()
                 category_summary.to_excel(writer, sheet_name='Category Analysis', index=False)
 
-            # Role breakdown - NEW SHEET
-            if 'role' in df.columns:
-                # Calculate totals for each role
-                role_summary_data = []
-                for role in ['Backend', 'Frontend', 'QA', 'Infra']:
-                    role_column = f'estimation_{role.lower()}_manday'
-                    if role_column in df.columns:
-                        total_effort = df[role_column].sum()
-                        task_count = df[df['role'] == role].shape[0]
-                        avg_effort = total_effort / task_count if task_count > 0 else 0
-                        role_summary_data.append({
-                            'Role': role,
-                            'Task Count': task_count,
-                            'Total Effort (mandays)': round(total_effort, 2),
-                            'Average Effort (mandays)': round(avg_effort, 2),
-                            'Percentage': f"{(total_effort / df['estimation_manday'].sum() * 100):.1f}%" if df['estimation_manday'].sum() > 0 else "0%"
-                        })
+            # Role breakdown - Summary across all tasks
+            role_summary_data = []
+            
+            # Backend total
+            backend_total = (df['backend_implement'].sum() + 
+                           df['backend_fixbug'].sum() + 
+                           df['backend_unittest'].sum())
+            
+            # Frontend total (including responsive)
+            frontend_total = (df['frontend_implement'].sum() + 
+                            df['frontend_fixbug'].sum() + 
+                            df['frontend_unittest'].sum() + 
+                            df['responsive_implement'].sum())
+            
+            # Testing total
+            testing_total = df['testing_implement'].sum()
+            
+            # Overall total
+            overall_total = df['estimation_manday'].sum()
+            
+            if overall_total > 0:
+                role_summary_data = [
+                    {
+                        'Role': 'Backend',
+                        'Total Effort (mandays)': round(backend_total, 2),
+                        'Percentage': f"{(backend_total / overall_total * 100):.1f}%",
+                        'Tasks with Backend Work': df[df['backend_implement'] > 0].shape[0]
+                    },
+                    {
+                        'Role': 'Frontend',
+                        'Total Effort (mandays)': round(frontend_total, 2),
+                        'Percentage': f"{(frontend_total / overall_total * 100):.1f}%",
+                        'Tasks with Frontend Work': df[df['frontend_implement'] > 0].shape[0]
+                    },
+                    {
+                        'Role': 'Testing/QA',
+                        'Total Effort (mandays)': round(testing_total, 2),
+                        'Percentage': f"{(testing_total / overall_total * 100):.1f}%",
+                        'Tasks with Testing Work': df[df['testing_implement'] > 0].shape[0]
+                    }
+                ]
                 
-                if role_summary_data:
-                    role_summary_df = pd.DataFrame(role_summary_data)
-                    role_summary_df.to_excel(writer, sheet_name='Role Breakdown', index=False)
+                role_summary_df = pd.DataFrame(role_summary_data)
+                role_summary_df.to_excel(writer, sheet_name='Role Breakdown', index=False)
 
             # Risk analysis sheet
             risk_data = []

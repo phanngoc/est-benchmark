@@ -269,6 +269,32 @@ def main():
             project_ids.insert(0, None)
             project_labels.insert(0, "-- No Project Selected --")
             
+            # Auto-select first project if none is selected
+            if st.session_state.selected_project_id is None and len(project_ids) > 1:
+                # Automatically select the first real project (index 1, since 0 is "No Project")
+                st.session_state.selected_project_id = project_ids[1]
+                st.session_state.graphrag_handler = GraphRAGHandler(
+                    Config.WORKING_DIR,
+                    project_id=project_ids[1]
+                )
+                st.session_state.estimation_workflow = EnhancedEstimationWorkflow(
+                    project_id=project_ids[1]
+                )
+                logger.info(f"Auto-selected first project: {project_ids[1]}")
+                
+                # Auto-initialize GraphRAG for the selected project
+                if not st.session_state.graphrag_handler.is_initialized:
+                    logger.info(f"Auto-initializing GraphRAG for project: {project_ids[1]}")
+                    success = st.session_state.graphrag_handler.initialize(
+                        domain=Config.DEFAULT_DOMAIN,
+                        entity_types=Config.DEFAULT_ENTITY_TYPES,
+                        example_queries=Config.DEFAULT_EXAMPLE_QUERIES
+                    )
+                    if success:
+                        logger.info(f"GraphRAG auto-initialized successfully for project: {project_ids[1]}")
+                    else:
+                        logger.error(f"GraphRAG auto-initialization failed for project: {project_ids[1]}")
+            
             # Find current index
             try:
                 current_index = project_ids.index(st.session_state.selected_project_id) if st.session_state.selected_project_id else 0
@@ -708,16 +734,38 @@ def main():
                     df = pd.DataFrame(estimation_data)
 
                     # Select and rename columns for display - INCLUDING ROLE AND ROLE-SPECIFIC ESTIMATIONS
+                    # Support both old and new field names for QA
+                    qa_field = 'estimation_testing_manday' if 'estimation_testing_manday' in df.columns else 'estimation_qa_manday'
+                    
                     display_columns = ['id', 'category', 'role', 'parent_task', 'sub_task', 'description', 
                                       'estimation_backend_manday', 'estimation_frontend_manday', 
-                                      'estimation_qa_manday', 'estimation_infra_manday',
+                                      qa_field, 'estimation_infra_manday',
                                       'estimation_manday', 'confidence_level']
                     
-                    if all(col in df.columns for col in display_columns):
-                        display_df = df[display_columns].copy()
-                        display_df.columns = ['ID', 'Category', 'Role', 'Parent Task', 'Sub Task', 'Description',
-                                             'Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)',
-                                             'Total (days)', 'Confidence']
+                    # Check which columns actually exist
+                    available_columns = [col for col in display_columns if col in df.columns]
+                    
+                    if len(available_columns) >= 6:  # At least basic columns
+                        display_df = df[available_columns].copy()
+                        
+                        # Create column names mapping
+                        column_names = []
+                        for col in available_columns:
+                            if col == 'id': column_names.append('ID')
+                            elif col == 'category': column_names.append('Category')
+                            elif col == 'role': column_names.append('Role')
+                            elif col == 'parent_task': column_names.append('Parent Task')
+                            elif col == 'sub_task': column_names.append('Sub Task')
+                            elif col == 'description': column_names.append('Description')
+                            elif col == 'estimation_backend_manday': column_names.append('Backend (days)')
+                            elif col == 'estimation_frontend_manday': column_names.append('Frontend (days)')
+                            elif col in ['estimation_qa_manday', 'estimation_testing_manday']: column_names.append('QA (days)')
+                            elif col == 'estimation_infra_manday': column_names.append('Infra (days)')
+                            elif col == 'estimation_manday': column_names.append('Total (days)')
+                            elif col == 'confidence_level': column_names.append('Confidence')
+                            else: column_names.append(col)
+                        
+                        display_df.columns = column_names
                         
                         # Round estimation columns
                         for col in ['Backend (days)', 'Frontend (days)', 'QA (days)', 'Infra (days)', 'Total (days)']:
@@ -725,17 +773,27 @@ def main():
                         
                         display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
 
-                        st.dataframe(display_df, use_container_width=True, height=400)
+                        st.dataframe(display_df, width='stretch', height=400)
                     else:
-                        st.dataframe(df, use_container_width=True, height=400)
+                        st.dataframe(df, width='stretch', height=400)
                 
                 # Add role summary metrics
                 st.subheader("👥 Effort by Role")
                 col1, col2, col3, col4 = st.columns(4)
                 
+                # NEW: Calculate effort by role using the role-specific estimation fields
+                # Each task has its effort in the field corresponding to its role
                 total_backend = df['estimation_backend_manday'].sum() if 'estimation_backend_manday' in df.columns else 0
                 total_frontend = df['estimation_frontend_manday'].sum() if 'estimation_frontend_manday' in df.columns else 0
-                total_qa = df['estimation_qa_manday'].sum() if 'estimation_qa_manday' in df.columns else 0
+                
+                # Support both old (estimation_qa_manday) and new (estimation_testing_manday) field names
+                if 'estimation_testing_manday' in df.columns:
+                    total_qa = df['estimation_testing_manday'].sum()
+                elif 'estimation_qa_manday' in df.columns:
+                    total_qa = df['estimation_qa_manday'].sum()
+                else:
+                    total_qa = 0
+                
                 total_infra = df['estimation_infra_manday'].sum() if 'estimation_infra_manday' in df.columns else 0
                 
                 with col1:
@@ -844,9 +902,9 @@ def main():
                     display_df['Effort (days)'] = display_df['Effort (days)'].round(1)
                     display_df['Confidence'] = (display_df['Confidence'] * 100).round(0).astype(int).astype(str) + '%'
 
-                    st.dataframe(display_df, use_container_width=True, height=300)
+                    st.dataframe(display_df, width='stretch', height=300)
                 else:
-                    st.dataframe(df_history, use_container_width=True, height=300)
+                    st.dataframe(df_history, width='stretch', height=300)
 
                 st.divider()
 
@@ -910,9 +968,9 @@ def main():
                             existing_task_columns = [col for col in task_display_columns if col in df_tasks.columns]
 
                             if existing_task_columns:
-                                st.dataframe(df_tasks[existing_task_columns], use_container_width=True, height=400)
+                                st.dataframe(df_tasks[existing_task_columns], width='stretch', height=400)
                             else:
-                                st.dataframe(df_tasks, use_container_width=True, height=400)
+                                st.dataframe(df_tasks, width='stretch', height=400)
                         else:
                             st.info("No task details found for this estimation")
                     else:
@@ -962,7 +1020,7 @@ def main():
                     if is_valid:
                         st.success(f"✅ Valid")
 
-                        if st.button("📥 Import", type="primary", use_container_width=True):
+                        if st.button("📥 Import", type="primary", width='stretch'):
                             with st.spinner("Importing..."):
                                 try:
                                     count = history_manager.import_from_csv(tmp_path)
@@ -990,7 +1048,7 @@ def main():
                     label_visibility="collapsed"
                 )
 
-                if st.button("📤 Export", use_container_width=True):
+                if st.button("📤 Export", width='stretch'):
                     try:
                         export_path = os.path.join(Config.RESULT_EST_DIR, export_filename)
                         os.makedirs(Config.RESULT_EST_DIR, exist_ok=True)
@@ -1004,7 +1062,7 @@ def main():
                                 data=f.read(),
                                 file_name=export_filename,
                                 mime="text/csv",
-                                use_container_width=True
+                                width='stretch'
                             )
                     except Exception as e:
                         st.error(f"❌ {str(e)}")
@@ -1023,7 +1081,7 @@ def main():
                             file_name="master_data_template.csv",
                             mime="text/csv",
                             help="CSV template with example estimation data",
-                            use_container_width=True
+                            width='stretch'
                         )
                 else:
                     st.warning("Template not found")
@@ -1122,11 +1180,9 @@ def main():
                 # Display with horizontal scroll for detailed view
                 st.dataframe(
                     df_display.drop('_task_id', axis=1),
-                    use_container_width=True,
+                    width='stretch',
                     height=400
-                )
-
-                # Action buttons
+                )                # Action buttons
                 st.markdown("### 🔧 Actions")
                 selected_task_id = st.selectbox(
                     "Select task for action",
@@ -1138,12 +1194,12 @@ def main():
                 col_edit, col_delete = st.columns(2)
 
                 with col_edit:
-                    if st.button("✏️ Edit Task", use_container_width=True):
+                    if st.button("✏️ Edit Task", width='stretch'):
                         st.session_state['editing_task_id'] = selected_task_id
                         st.rerun()
 
                 with col_delete:
-                    if st.button("🗑️ Delete Task", use_container_width=True, type="secondary"):
+                    if st.button("🗑️ Delete Task", width='stretch', type="secondary"):
                         if history_manager.delete_task(selected_task_id):
                             st.success(f"✅ Deleted task: {selected_task_id}")
                             st.rerun()
@@ -1282,10 +1338,10 @@ def main():
                 col_save, col_cancel = st.columns([1, 1])
 
                 with col_save:
-                    submitted = st.form_submit_button("💾 Save Task", type="primary", use_container_width=True)
+                    submitted = st.form_submit_button("💾 Save Task", type="primary", width='stretch')
 
                 with col_cancel:
-                    cancel = st.form_submit_button("❌ Cancel", use_container_width=True)
+                    cancel = st.form_submit_button("❌ Cancel", width='stretch')
 
             # Handle form submission OUTSIDE the form block
             if submitted:
@@ -1490,7 +1546,7 @@ def main():
                         st.subheader("📊 Generated Architecture Diagram")
 
                         # Display diagram image
-                        st.image(diagram_path, caption="System Architecture Diagram", use_container_width=True)
+                        st.image(diagram_path, caption="System Architecture Diagram", width='stretch')
 
                         # Display component info
                         if st.session_state.get('arch_diagram_info'):
@@ -1511,12 +1567,12 @@ def main():
                                     list(info['component_types'].items()),
                                     columns=['Type', 'Count']
                                 )
-                                st.dataframe(types_df, use_container_width=True, hide_index=True)
+                                st.dataframe(types_df, width='stretch', hide_index=True)
 
                             # Detailed component list
                             with st.expander("📋 Detailed Component List", expanded=False):
                                 components_df = pd.DataFrame(info['components'])
-                                st.dataframe(components_df, use_container_width=True, hide_index=True)
+                                st.dataframe(components_df, width='stretch', hide_index=True)
 
                         st.divider()
 
@@ -1534,12 +1590,12 @@ def main():
                                     file_name=f"architecture_diagram_{estimation_id[:8]}.png",
                                     mime="image/png",
                                     type="primary",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
 
                         with col2:
                             # Regenerate button
-                            if st.button("🔄 Regenerate Diagram", type="secondary", use_container_width=True):
+                            if st.button("🔄 Regenerate Diagram", type="secondary", width='stretch'):
                                 st.session_state.pop('arch_diagram_path', None)
                                 st.session_state.pop('arch_diagram_info', None)
                                 st.rerun()
@@ -1685,7 +1741,7 @@ def main():
                             if st.button(
                                 "✏️ Edit",
                                 key=f"edit_{project['project_id']}",
-                                use_container_width=True
+                                width='stretch'
                             ):
                                 st.session_state[f"editing_{project['project_id']}"] = True
                                 st.rerun()
@@ -1695,7 +1751,7 @@ def main():
                             if st.button(
                                 "📌 Set Active",
                                 key=f"activate_{project['project_id']}",
-                                use_container_width=True,
+                                width='stretch',
                                 disabled=(st.session_state.selected_project_id == project['project_id'])
                             ):
                                 st.session_state.selected_project_id = project['project_id']
@@ -1715,7 +1771,7 @@ def main():
                             if st.button(
                                 "🗑️ Delete",
                                 key=f"delete_{project['project_id']}",
-                                use_container_width=True,
+                                width='stretch',
                                 type="secondary"
                             ):
                                 st.session_state[f"confirm_delete_{project['project_id']}"] = True
@@ -1747,7 +1803,7 @@ def main():
                                 
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True):
+                                    if st.form_submit_button("💾 Save Changes", type="primary", width='stretch'):
                                         try:
                                             success = st.session_state.project_manager.update_project(
                                                 project_id=project['project_id'],
@@ -1767,7 +1823,7 @@ def main():
                                             logger.error(f"Failed to update project: {e}")
                                 
                                 with col2:
-                                    if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                    if st.form_submit_button("❌ Cancel", width='stretch'):
                                         st.session_state.pop(f"editing_{project['project_id']}", None)
                                         st.rerun()
                         
@@ -1789,7 +1845,7 @@ def main():
                                     "✅ Yes, Delete",
                                     key=f"confirm_yes_{project['project_id']}",
                                     type="primary",
-                                    use_container_width=True
+                                    width='stretch'
                                 ):
                                     try:
                                         # Delete with cascade
@@ -1819,7 +1875,7 @@ def main():
                                 if st.button(
                                     "❌ Cancel",
                                     key=f"confirm_no_{project['project_id']}",
-                                    use_container_width=True
+                                    width='stretch'
                                 ):
                                     st.session_state.pop(f"confirm_delete_{project['project_id']}", None)
                                     st.rerun()
