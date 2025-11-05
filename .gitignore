@@ -29,7 +29,7 @@ env.bak/
 .ipynb_checkpoints
 
 # Thư mục workspace của app
-graphrag_workspace/
+graphrag_workspace_projects/
 
 # Log files
 *.log
@@ -46,3 +46,4 @@ uploads/
 embedding_cache/
 result_est/
 estimation_tracker.db
+logs/
