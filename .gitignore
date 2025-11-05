@@ -27,8 +27,6 @@ env.bak/
 
 # Jupyter notebook checkpoint
 .ipynb_checkpoints
-
-# Thư mục workspace của app
 graphrag_workspace_projects/
 
 # Log files
@@ -43,7 +41,7 @@ logs/*.log.*
 Thumbs.db
 estimation_history_db/
 uploads/
-embedding_cache/
 result_est/
 estimation_tracker.db
 logs/
+examples/

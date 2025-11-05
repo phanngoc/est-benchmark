@@ -107,9 +107,19 @@ class FileProcessor:
     
     @staticmethod
     def process_uploaded_files(uploaded_files: List, save_to_disk: bool = True, uploads_dir: str = "./uploads",
-                               metadata_file: str = ".metadata.json", hash_algorithm: str = "sha256") -> Dict[str, Any]:
+                               metadata_file: str = ".metadata.json", hash_algorithm: str = "sha256",
+                               project_id: str = None) -> Dict[str, Any]:
         """
         Xử lý danh sách file đã upload với duplicate detection
+        
+        Args:
+            uploaded_files: List of uploaded file objects
+            save_to_disk: Whether to save files to disk
+            uploads_dir: Base uploads directory (will be modified if project_id is provided)
+            metadata_file: Name of metadata file
+            hash_algorithm: Hash algorithm to use
+            project_id: Project identifier for project-scoped storage
+            
         Returns: {
             'processed_files': List[Dict],
             'stats': {
@@ -118,6 +128,13 @@ class FileProcessor:
             'duplicates': List[Dict]  # Thông tin các file duplicate
         }
         """
+        from config import Config
+        
+        # Use project-scoped directory if project_id is provided
+        if project_id:
+            uploads_dir = Config.get_project_uploads_dir(project_id)
+            logger.info(f"Using project-scoped uploads directory: {uploads_dir}")
+        
         processed_files = []
         duplicate_files = []
         stats = {'new': 0, 'duplicates': 0, 'updated': 0, 'errors': 0}
@@ -236,8 +253,23 @@ class FileProcessor:
         return content[:max_chars] + "..."
 
     @staticmethod
-    def check_uploads_directory(uploads_dir: str = "./uploads") -> Dict[str, Any]:
-        """Check if uploads directory exists and has files"""
+    def check_uploads_directory(uploads_dir: str = "./uploads", project_id: str = None) -> Dict[str, Any]:
+        """
+        Check if uploads directory exists and has files
+        
+        Args:
+            uploads_dir: Base uploads directory
+            project_id: Project identifier for project-scoped storage
+            
+        Returns:
+            Dictionary with directory status and file list
+        """
+        from config import Config
+        
+        # Use project-scoped directory if project_id is provided
+        if project_id:
+            uploads_dir = Config.get_project_uploads_dir(project_id)
+        
         result = {
             'exists': False,
             'has_files': False,
