@@ -47,3 +47,4 @@ uploads/
 embedding_cache/
 result_est/
 estimation_tracker.db
+examples/

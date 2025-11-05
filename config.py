@@ -27,6 +27,9 @@ class Config:
     # File Upload Configuration
     MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
     ALLOWED_EXTENSIONS = ['.txt', '.pdf', '.docx', '.md']
+    FILE_UPLOAD_STATUSES = ['active', 'archived', 'deleted', 'processed', 'error', 'pending']  # Valid file statuses
+    DEFAULT_FILE_STATUS = 'active'  # Default status for newly uploaded files
+    ENABLE_DUPLICATE_DETECTION = True  # Enable file hash-based duplicate detection
     
     # GraphRAG Configuration
     DEFAULT_DOMAIN = "Tập trung vào phân tích tài liệu kỹ thuật và break task thành category, parent task, sub task với estimation."
