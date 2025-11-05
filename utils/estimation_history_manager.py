@@ -13,22 +13,26 @@ from .embedding_service import get_embedding_service
 
 
 class EstimationHistoryManager:
-    """Manages estimation history with semantic search capabilities"""
+    """Manages estimation history with semantic search capabilities and project isolation"""
 
     def __init__(
         self,
         db_path: str = "./estimation_history_db",
-        collection_name: str = "estimation_history"
+        collection_name: str = "estimation_history",
+        project_id: Optional[str] = None
     ):
         """
-        Initialize history manager
+        Initialize history manager with optional project isolation
 
         Args:
             db_path: Path to ChromaDB storage
-            collection_name: Name of the collection
+            collection_name: Base name of the collection
+            project_id: Optional project ID for project-scoped collection.
+                       If provided, creates collection named "project_{project_id}_history"
         """
         self.db_path = db_path
-        self.collection_name = collection_name
+        self.base_collection_name = collection_name
+        self.project_id = project_id
         self.embedding_service = get_embedding_service()
 
         # Initialize ChromaDB client
@@ -40,11 +44,42 @@ class EstimationHistoryManager:
             )
         )
 
-        # Create or get collection
-        self.collection = self.client.get_or_create_collection(
+        # Create or get collection (project-scoped if project_id provided)
+        self.collection = self.get_or_create_project_collection()
+
+    def get_or_create_project_collection(self):
+        """
+        Get or create collection with project-specific name if project_id is set
+        
+        Returns:
+            ChromaDB collection instance
+        """
+        if self.project_id:
+            # Create project-specific collection name
+            collection_name = f"project_{self.project_id}_history"
+            from utils.logger import get_logger
+            logger = get_logger(__name__)
+            logger.info(f"Using project-scoped collection: {collection_name}")
+        else:
+            # Use base collection name for global history
+            collection_name = self.base_collection_name
+            from utils.logger import get_logger
+            logger = get_logger(__name__)
+            logger.info(f"Using global collection: {collection_name}")
+        
+        # Store the actual collection name being used
+        self.collection_name = collection_name
+        
+        # Get or create collection
+        collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"description": "Task estimation history with embeddings"}
+            metadata={
+                "description": f"Task estimation history with embeddings",
+                "project_id": self.project_id if self.project_id else "global"
+            }
         )
+        
+        return collection
 
     def _prepare_task_text(self, task: Dict[str, Any]) -> str:
         """
@@ -66,7 +101,16 @@ class EstimationHistoryManager:
         return " | ".join(parts)
 
     def _prepare_metadata(self, task: Dict[str, Any], project_name: str) -> Dict[str, Any]:
-        """Prepare metadata for storage"""
+        """
+        Prepare metadata for storage
+        
+        Args:
+            task: Task dictionary
+            project_name: Name of the project
+            
+        Returns:
+            Metadata dictionary with project_id if available
+        """
         metadata = {
             'project_name': project_name,
             'category': task.get('category', ''),
@@ -91,6 +135,10 @@ class EstimationHistoryManager:
             'created_at': datetime.now().isoformat(),
             'validated': task.get('validated', False)
         }
+        
+        # Add project_id to metadata if this is a project-scoped instance
+        if self.project_id:
+            metadata['project_id'] = self.project_id
 
         return metadata
 
@@ -689,12 +737,48 @@ class EstimationHistoryManager:
             return []
 
 
-# Singleton instance
-_history_manager_instance = None
+# Singleton instances (one per project or global)
+_history_manager_instances = {}
 
-def get_history_manager() -> EstimationHistoryManager:
-    """Get or create singleton EstimationHistoryManager instance"""
-    global _history_manager_instance
-    if _history_manager_instance is None:
-        _history_manager_instance = EstimationHistoryManager()
-    return _history_manager_instance
+def get_history_manager(
+    db_path: Optional[str] = None,
+    collection_name: Optional[str] = None,
+    project_id: Optional[str] = None
+) -> EstimationHistoryManager:
+    """
+    Get or create EstimationHistoryManager instance
+    
+    Creates project-specific instances when project_id is provided,
+    or returns global instance when project_id is None.
+    
+    Args:
+        db_path: Optional custom database path
+        collection_name: Optional custom collection name
+        project_id: Optional project ID for project-scoped instance
+        
+    Returns:
+        EstimationHistoryManager instance
+    """
+    global _history_manager_instances
+    
+    # Create key for instance lookup
+    instance_key = project_id if project_id else "global"
+    
+    # Create new instance if not exists
+    if instance_key not in _history_manager_instances:
+        # Use defaults from config if not provided
+        if db_path is None:
+            from config import Config
+            db_path = Config.ESTIMATION_HISTORY_DB_PATH
+        
+        if collection_name is None:
+            from config import Config
+            collection_name = Config.ESTIMATION_HISTORY_COLLECTION
+        
+        _history_manager_instances[instance_key] = EstimationHistoryManager(
+            db_path=db_path,
+            collection_name=collection_name,
+            project_id=project_id
+        )
+    
+    return _history_manager_instances[instance_key]

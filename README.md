@@ -44,6 +44,24 @@ CONCURRENT_TASK_LIMIT=8
 
 ### 4. Chạy ứng dụng
 
+#### Phương pháp Quickstart (Khuyến nghị)
+
+Sử dụng script `run.py` để chạy ứng dụng với kiểm tra tự động:
+
+```bash
+python run.py
+```
+
+Script này sẽ:
+- ✅ Kiểm tra file `.env` có tồn tại không
+- ✅ Kiểm tra dependencies đã được cài đặt chưa
+- ✅ Hiển thị thông báo lỗi rõ ràng nếu thiếu cấu hình
+- ✅ Tự động khởi động ứng dụng tại `http://localhost:8505`
+
+#### Phương pháp truyền thống
+
+Hoặc chạy trực tiếp với Streamlit:
+
 ```bash
 streamlit run app.py
 ```
@@ -78,9 +96,10 @@ streamlit run app.py
 
 ## 📁 Cấu trúc dự án
 
-```
+```text
 est-benchmark/
 ├── app.py                 # Ứng dụng Streamlit chính
+├── run.py                 # Script quickstart để chạy ứng dụng
 ├── config.py             # Cấu hình
 ├── requirements.txt      # Dependencies
 ├── env.example          # Mẫu file môi trường

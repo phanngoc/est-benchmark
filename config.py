@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -26,6 +27,9 @@ class Config:
     # File Upload Configuration
     MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
     ALLOWED_EXTENSIONS = ['.txt', '.pdf', '.docx', '.md']
+    FILE_UPLOAD_STATUSES = ['active', 'archived', 'deleted', 'processed', 'error', 'pending']  # Valid file statuses
+    DEFAULT_FILE_STATUS = 'active'  # Default status for newly uploaded files
+    ENABLE_DUPLICATE_DETECTION = True  # Enable file hash-based duplicate detection
     
     # GraphRAG Configuration
     DEFAULT_DOMAIN = "Tập trung vào phân tích tài liệu kỹ thuật và break task thành category, parent task, sub task với estimation."
@@ -49,6 +53,43 @@ class Config:
     METADATA_FILE = ".metadata.json"
     HASH_ALGORITHM = "sha256"
     
+    @classmethod
+    def get_project_uploads_dir(cls, project_id: str) -> str:
+        """Get project-specific uploads directory path"""
+        return os.path.join(cls.UPLOADS_DIR, project_id)
+    
+    @classmethod
+    def get_project_result_dir(cls, project_id: str) -> str:
+        """Get project-specific result_est directory path"""
+        return os.path.join(cls.RESULT_EST_DIR, project_id)
+    
+    @classmethod
+    def get_project_architecture_dir(cls, project_id: str) -> str:
+        """Get project-specific architecture_diagrams directory path"""
+        return os.path.join(cls.ARCHITECTURE_DIAGRAMS_DIR, project_id)
+    
+    @classmethod
+    def ensure_project_directories(cls, project_id: str) -> Dict[str, str]:
+        """
+        Create project-specific directories if they don't exist
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            Dictionary with paths: {uploads, results, architecture}
+        """
+        paths = {
+            'uploads': cls.get_project_uploads_dir(project_id),
+            'results': cls.get_project_result_dir(project_id),
+            'architecture': cls.get_project_architecture_dir(project_id)
+        }
+        
+        for path in paths.values():
+            os.makedirs(path, exist_ok=True)
+        
+        return paths
+    
     # Visualization Configuration
     GRAPH_LAYOUT = "spring"  # spring, circular, random, shell, etc.
     MAX_NODES_DISPLAY = 100
@@ -63,6 +104,13 @@ class Config:
     ENABLE_FEW_SHOT_PROMPTING = True  # Enable/disable historical data usage
     FEW_SHOT_SIMILARITY_THRESHOLD = 0.6  # Minimum similarity score (0-1)
     FEW_SHOT_MAX_EXAMPLES = 5  # Maximum number of historical examples
+
+    # Project Management Configuration
+    DEFAULT_PROJECT_STATUS = "active"  # Default status for new projects: active, completed, archived, on-hold
+    PROJECT_STATUS_OPTIONS = ["active", "completed", "archived", "on-hold"]  # Valid project status values
+    AUTO_CREATE_DEFAULT_PROJECT = True  # Auto-create a default project if none exists
+    DEFAULT_PROJECT_NAME = "Default Project"  # Name for the auto-created default project
+    DEFAULT_PROJECT_DESCRIPTION = "Default project for estimations without specific project assignment"
 
     @classmethod
     def validate_config(cls):

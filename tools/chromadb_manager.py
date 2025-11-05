@@ -277,7 +277,7 @@ def render_document_management(db_manager: ChromaDBManager, collection_name: str
                 df_data.append(row)
             
             df = pd.DataFrame(df_data)
-            st.dataframe(df, use_container_width=True, height=400)
+            st.dataframe(df, width='stretch', height=400)
             
             # Export to CSV
             csv = df.to_csv(index=False).encode('utf-8')
@@ -576,7 +576,7 @@ def render_query_panel(db_manager: ChromaDBManager, collection_name: str):
                                 df_data.append(row)
                             
                             df = pd.DataFrame(df_data)
-                            st.dataframe(df, use_container_width=True)
+                            st.dataframe(df, width='stretch')
                             
                             # Detailed view
                             st.write("**Chi tiết từng kết quả:**")
@@ -653,16 +653,16 @@ def main():
         
         # Navigation
         st.subheader("🧭 Navigation")
-        if st.button("📚 Collections", use_container_width=True):
+        if st.button("📚 Collections", width='stretch'):
             st.session_state.active_tab = "collections"
             st.rerun()
         
         if st.session_state.selected_collection:
-            if st.button(f"📄 Documents ({st.session_state.selected_collection})", use_container_width=True):
+            if st.button(f"📄 Documents ({st.session_state.selected_collection})", width='stretch'):
                 st.session_state.active_tab = "documents"
                 st.rerun()
             
-            if st.button(f"🔍 Query Panel ({st.session_state.selected_collection})", use_container_width=True):
+            if st.button(f"🔍 Query Panel ({st.session_state.selected_collection})", width='stretch'):
                 st.session_state.active_tab = "query"
                 st.rerun()
         

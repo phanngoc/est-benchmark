@@ -90,7 +90,8 @@ class SunAsteriskExcelExporter:
     def export(
         self,
         data: List[Dict[str, Any]],
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        project_id: str = None
     ) -> str:
         """
         Export estimation data to Sun Asterisk Excel format.
@@ -98,15 +99,24 @@ class SunAsteriskExcelExporter:
         Args:
             data: List of task dictionaries with estimation data
             filename: Output filename (auto-generated if None)
+            project_id: Project identifier for project-scoped storage
 
         Returns:
             str: Path to exported Excel file
         """
+        from config import Config
+        
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"sunasterisk_estimation_{timestamp}.xlsx"
 
-        filepath = os.path.join(os.getcwd(), filename)
+        # Determine output directory
+        if project_id:
+            output_dir = Config.get_project_result_dir(project_id)
+            os.makedirs(output_dir, exist_ok=True)
+            filepath = os.path.join(output_dir, filename)
+        else:
+            filepath = os.path.join(os.getcwd(), filename)
 
         try:
             # Create workbook
@@ -419,7 +429,8 @@ def export_sunasterisk_excel(
     no: str = "001",
     version: str = "1.0",
     issue_date: Optional[str] = None,
-    md_per_mm: int = 20
+    md_per_mm: int = 20,
+    project_id: str = None
 ) -> str:
     """
     Convenience function to export Sun Asterisk Excel estimation sheet.
@@ -431,6 +442,7 @@ def export_sunasterisk_excel(
         version: Document version
         issue_date: Issue date (defaults to today)
         md_per_mm: Man-days per man-month
+        project_id: Project identifier for project-scoped storage
 
     Returns:
         str: Path to exported Excel file
@@ -441,4 +453,4 @@ def export_sunasterisk_excel(
         issue_date=issue_date,
         md_per_mm=md_per_mm
     )
-    return exporter.export(data, filename)
+    return exporter.export(data, filename, project_id=project_id)

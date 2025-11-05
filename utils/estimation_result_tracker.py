@@ -42,17 +42,31 @@ class EstimationResultTracker:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Create projects table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+                project_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active'
+            )
+        """)
+
         # Create estimation_runs table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS estimation_runs (
                 estimation_id TEXT PRIMARY KEY,
+                project_id TEXT,
                 file_path TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 total_effort REAL,
                 total_tasks INTEGER,
                 average_confidence REAL,
                 workflow_status TEXT,
-                project_description TEXT
+                project_description TEXT,
+                FOREIGN KEY (project_id) REFERENCES projects(project_id)
             )
         """)
 
@@ -61,6 +75,7 @@ class EstimationResultTracker:
             CREATE TABLE IF NOT EXISTS estimation_tasks (
                 task_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 estimation_id TEXT NOT NULL,
+                project_id TEXT,
                 id TEXT,
                 category TEXT,
                 role TEXT,
@@ -78,14 +93,30 @@ class EstimationResultTracker:
                 dependencies TEXT,
                 risk_factors TEXT,
                 assumptions TEXT,
-                FOREIGN KEY (estimation_id) REFERENCES estimation_runs(estimation_id)
+                FOREIGN KEY (estimation_id) REFERENCES estimation_runs(estimation_id),
+                FOREIGN KEY (project_id) REFERENCES projects(project_id)
             )
         """)
 
         # Create indexes for performance
         cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_projects_status
+            ON projects(status)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_estimation_runs_project_id
+            ON estimation_runs(project_id)
+        """)
+
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_estimation_id
             ON estimation_tasks(estimation_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_estimation_tasks_project_id
+            ON estimation_tasks(project_id)
         """)
 
         cursor.execute("""
@@ -107,7 +138,8 @@ class EstimationResultTracker:
         self,
         estimation_id: str,
         file_path: str,
-        summary_data: Dict[str, Any]
+        summary_data: Dict[str, Any],
+        project_id: str = None
     ) -> str:
         """
         Create a new estimation run entry
@@ -121,6 +153,7 @@ class EstimationResultTracker:
                 - average_confidence: Average confidence level
                 - workflow_status: Status (completed, failed, etc.)
                 - project_description: Original task description
+            project_id: Project identifier (optional)
 
         Returns:
             estimation_id
@@ -131,11 +164,12 @@ class EstimationResultTracker:
         try:
             cursor.execute("""
                 INSERT INTO estimation_runs
-                (estimation_id, file_path, total_effort, total_tasks,
+                (estimation_id, project_id, file_path, total_effort, total_tasks,
                  average_confidence, workflow_status, project_description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 estimation_id,
+                project_id,
                 file_path,
                 summary_data.get('total_effort', 0.0),
                 summary_data.get('total_tasks', 0),
@@ -145,7 +179,7 @@ class EstimationResultTracker:
             ))
 
             conn.commit()
-            logger.info(f"✅ Created estimation run: {estimation_id}")
+            logger.info(f"✅ Created estimation run: {estimation_id} (project: {project_id})")
 
             return estimation_id
 
@@ -159,7 +193,8 @@ class EstimationResultTracker:
     def save_estimation_tasks(
         self,
         estimation_id: str,
-        tasks_data: List[Dict[str, Any]]
+        tasks_data: List[Dict[str, Any]],
+        project_id: str = None
     ) -> int:
         """
         Save detailed task data for an estimation run
@@ -167,6 +202,7 @@ class EstimationResultTracker:
         Args:
             estimation_id: ID of the estimation run
             tasks_data: List of task dictionaries with estimation details
+            project_id: Project identifier (optional)
 
         Returns:
             Number of tasks saved
@@ -189,14 +225,15 @@ class EstimationResultTracker:
 
                 cursor.execute("""
                     INSERT INTO estimation_tasks
-                    (estimation_id, id, category, role, parent_task, sub_task,
+                    (estimation_id, project_id, id, category, role, parent_task, sub_task,
                      description, estimation_manday, estimation_backend_manday,
                      estimation_frontend_manday, estimation_qa_manday,
                      estimation_infra_manday, confidence_level, complexity,
                      priority, dependencies, risk_factors, assumptions)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     estimation_id,
+                    project_id,
                     task.get('id', ''),
                     task.get('category', ''),
                     task.get('role', ''),
@@ -347,7 +384,8 @@ class EstimationResultTracker:
         keyword: str = None,
         min_effort: float = None,
         max_effort: float = None,
-        status: str = None
+        status: str = None,
+        project_id: str = None
     ) -> List[Dict[str, Any]]:
         """
         Search estimations with filters
@@ -357,6 +395,7 @@ class EstimationResultTracker:
             min_effort: Minimum total effort
             max_effort: Maximum total effort
             status: Workflow status filter
+            project_id: Filter by project_id
 
         Returns:
             List of matching estimation runs
@@ -384,6 +423,10 @@ class EstimationResultTracker:
             query += " AND workflow_status = ?"
             params.append(status)
 
+        if project_id:
+            query += " AND project_id = ?"
+            params.append(project_id)
+
         query += " ORDER BY created_at DESC"
 
         try:
@@ -397,6 +440,18 @@ class EstimationResultTracker:
 
         finally:
             conn.close()
+    
+    def get_estimations_by_project(self, project_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all estimations for a specific project
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            List of estimation runs for the project
+        """
+        return self.search_estimations(project_id=project_id)
 
     def get_statistics(self) -> Dict[str, Any]:
         """
